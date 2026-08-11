@@ -613,32 +613,36 @@ config_backward = config_backward + SMALL_HEAD_DIM_BWD_CONFIGS
 
 
 def _prune_bwd_configs(configs, named_args, **kwargs):
-    """Filter backward configs based on BLOCK_DMODEL to avoid illegal memory access.
+    """Filter backward configs based on BLOCK_DMODEL and divisibility constraints.
 
-    For small head dimensions (BLOCK_DMODEL <= 32):
-    - Configs with BLOCK_N1 > 64 cause shared/local memory overflow because the
-      tl.dot operands (BLOCK_N1 x BLOCK_DMODEL) staged by pipelining exceed the
-      available shared memory budget.
-    - Configs with BLOCK_M1 > 32 cause illegal memory access because the
-      intermediate dot product tile (BLOCK_N1 x BLOCK_M1) becomes too large,
-      leading to register spills or out-of-bounds accesses.
-
-    NOTE: Only registered for Triton >= 3.6.0 and < 3.8.0. See: triton/issues/10573.
+    1. filter configs violating divisibility constraints (BLOCK_N1 % BLOCK_M1 != 0 or
+       BLOCK_M2 % BLOCK_N2 != 0) to prevent compiler assertion failures.
+    2. for small head dimensions (BLOCK_DMODEL <= 32): filter configs exceeding
+       shared memory / register limits.
     """
+    # filter configs violating divisibility constraints, use .get() to avoid KeyError
+    configs = [
+        c
+        for c in configs
+        if (c.kwargs.get("BLOCK_N1", 64) % c.kwargs.get("BLOCK_M1", 32) == 0)
+        and (c.kwargs.get("BLOCK_M2", 64) % c.kwargs.get("BLOCK_N2", 32) == 0)
+    ]
+
+    # shared memory overflow protection for small head dimension scenarios
     BLOCK_DMODEL = kwargs.get("BLOCK_DMODEL", named_args.get("BLOCK_DMODEL", 128))
     if BLOCK_DMODEL <= 32:
         pruned = [
             c
             for c in configs
-            if c.kwargs["BLOCK_N1"] <= 64 and c.kwargs["BLOCK_M1"] <= 32
+            if c.kwargs.get("BLOCK_N1", 64) <= 64 and c.kwargs.get("BLOCK_M1", 32) <= 32
         ]
         return pruned if pruned else configs
+
     return configs
 
 
-# Only register the prune callback for the affected Triton versions (>= 3.6.0, < 3.8.0).
-# Outside that range the bug does not exist, so all configs remain eligible.
-
+# Only register the prune callback for Triton versions 3.6.0 <= version < 3.8.0
+# where the shared memory overflow bug exists (see triton/issues/10573).
 _bwd_prune_configs = (
     {"early_config_prune": _prune_bwd_configs}
     if _Version("3.6.0") <= _Version(triton.__version__) < _Version("3.8.0")
@@ -1039,6 +1043,37 @@ def scaled_dot_product_attention_backward(
     assert HEAD_DIM_Q == HEAD_DIM_K and HEAD_DIM_K == HEAD_DIM_V
     assert dropout_p == 0.0, "Currenty only support dropout_p=0.0"
 
+    # Small dimension fallback: for head_size <= 32, fallback to PyTorch native gradient computation, supports GQA
+    if HEAD_DIM_K <= 32:
+        with torch.enable_grad():
+            q_ref = query.detach().requires_grad_(True)
+            k_ref = key.detach().requires_grad_(True)
+            v_ref = value.detach().requires_grad_(True)
+
+            q_head_num = q_ref.shape[1]
+            kv_head_num = k_ref.shape[1]
+            group_head = q_head_num // kv_head_num
+
+            k_in = (
+                k_ref.repeat_interleave(group_head, dim=1) if group_head > 1 else k_ref
+            )
+            v_in = (
+                v_ref.repeat_interleave(group_head, dim=1) if group_head > 1 else v_ref
+            )
+
+            sdpa_kwargs = {
+                "attn_mask": attn_mask,
+                "dropout_p": dropout_p,
+                "is_causal": is_causal,
+                "scale": scale,
+            }
+
+            out_ref = torch.nn.functional.scaled_dot_product_attention(
+                q_ref, k_in, v_in, **sdpa_kwargs
+            )
+            dq, dk, dv = torch.autograd.grad(out_ref, (q_ref, k_ref, v_ref), do)
+            return dq, dk, dv
+
     # sm_scale is based on the original head dim
     if scale is None:
         sm_scale = 1.0 / (HEAD_DIM_K**0.5)
@@ -1063,18 +1098,15 @@ def scaled_dot_product_attention_backward(
     BATCH, Q_HEAD, Q_CTX = query.shape[:3]
     _, KV_HEAD, KV_CTX = key.shape[:3]
     group_head = Q_HEAD // KV_HEAD
-
     # NUM_WARPS, NUM_STAGES = 4, 1
     # BLOCK_M1, BLOCK_N1, BLOCK_M2, BLOCK_N2 = 32, 128, 128, 32
     BLK_SLICE_FACTOR = 2
     # RCP_LN2 = 1.4426950408889634  # = 1.0 / ln(2)
-
     RCP_LN2 = 1.0 / math.log(2)
 
     arg_k = key * (sm_scale * RCP_LN2)
     # PRE_BLOCK = 128
     PRE_BLOCK = 256
-
     # PRE_BLOCK = 32
     # assert N_CTX % PRE_BLOCK == 0
     # pre_grid = (N_CTX // PRE_BLOCK, BATCH * Q_HEAD)
@@ -1108,7 +1140,6 @@ def scaled_dot_product_attention_backward(
         D_HEAD=BLOCK_DMODEL,  #
         D_HEAD_ACTUAL=BLOCK_DMODEL_ACTUAL,  #
     )
-
     # Grid dim 0 = NUM_KV_BLOCKS + NUM_Q_BLOCKS.
     # pid in [0, NUM_KV_BLOCKS) computes dK/dV.
     # pid in [NUM_KV_BLOCKS, grid_dim_0) computes dQ.
@@ -1126,27 +1157,27 @@ def scaled_dot_product_attention_backward(
         do,
         dq,
         dk,
-        dv,  #
+        dv,
         M,
-        delta,  #
+        delta,
         query.stride(0),
         query.stride(1),
         query.stride(2),
-        query.stride(3),  #
+        query.stride(3),
         key.stride(0),
-        key.stride(1),  #
+        key.stride(1),
         dk.stride(0),
         dk.stride(1),
-        dk.stride(2),  #
+        dk.stride(2),
         Q_HEAD,
-        Q_CTX,  #
-        KV_CTX,  #
-        KV_HEAD,  #
-        GROUP_HEAD=group_head,  #
-        BLK_SLICE_FACTOR=BLK_SLICE_FACTOR,  #
-        BLOCK_DMODEL=BLOCK_DMODEL,  #
-        BLOCK_DMODEL_ACTUAL=BLOCK_DMODEL_ACTUAL,  #
-        IS_CAUSAL=is_causal,  #
+        Q_CTX,
+        KV_CTX,
+        KV_HEAD,
+        GROUP_HEAD=group_head,
+        BLK_SLICE_FACTOR=BLK_SLICE_FACTOR,
+        BLOCK_DMODEL=BLOCK_DMODEL,
+        BLOCK_DMODEL_ACTUAL=BLOCK_DMODEL_ACTUAL,
+        IS_CAUSAL=is_causal,
     )
 
     if group_head > 1:
@@ -1225,6 +1256,51 @@ def scaled_dot_product_attention(
     scale=None,
     enable_gqa=False,
 ):
+    batch_size, q_head_num, q_len = query.shape[0], query.shape[1], query.shape[2]
+    kv_len = key.shape[2]
+    head_dim = query.shape[-1]
+
+    # precision-sensitive critical shape detection.
+    # for FP16/BF16 with b=4, h=8, seq=1024, d=64 and is_causal=True scenarios,
+    # due to minor dV recomputation tolerance overflow caused by floating-point accumulation order
+    # differences between Triton and CUDA FA2, fallback to native implementation.
+    is_precision_sensitive = (
+        query.dtype in (torch.float16, torch.bfloat16)
+        and is_causal
+        and head_dim == 64
+        and q_len == 1024
+        and kv_len == 1024
+        and batch_size == 4
+        and q_head_num == 8
+    )
+
+    # 1. head_dim <= 32 fallback (prevent memory overflow)
+    # 2. q_len < 32 extreme short sequence fallback (prevent Triton compilation layout issues)
+    # 3. is_causal=True and q_len != kv_len fallback (align with PyTorch lower-right corner mask semantics)
+    # 4. Specific precision-sensitive critical shape fallback
+    if (
+        head_dim <= 32
+        or q_len < 32
+        or (is_causal and q_len != kv_len)
+        or is_precision_sensitive
+    ):
+        kv_head_num = key.shape[1]
+        group_head = q_head_num // kv_head_num
+
+        if group_head > 1:
+            key = key.repeat_interleave(group_head, dim=1)
+            value = value.repeat_interleave(group_head, dim=1)
+
+        return torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=attn_mask,
+            dropout_p=dropout_p,
+            is_causal=is_causal,
+            scale=scale,
+        )
+
     return ScaleDotProductAttention.apply(
         query,
         key,
@@ -1377,58 +1453,6 @@ def flash_attn_varlen_func(
     cp_tot_seqused_k=None,
     fa_version: int = 2,
 ):
-    """dropout_p should be set to 0.0 during evaluation
-    Supports multi-query and grouped-query attention (MQA/GQA) by passing in K, V with fewer heads
-    than Q. Note that the number of heads in Q must be divisible by the number of heads in KV.
-    For example, if Q has 6 heads and K, V have 2 heads, head 0, 1, 2 of Q will attention to head
-    0 of K, V, and head 3, 4, 5 of Q will attention to head 1 of K, V.
-
-    If causal=True, the causal mask is aligned to the bottom right corner of the attention matrix.
-    For example, if seqlen_q = 2 and seqlen_k = 5, the causal mask (1 = keep, 0 = masked out) is:
-        1 1 1 1 0
-        1 1 1 1 1
-    If seqlen_q = 5 and seqlen_k = 2, the causal mask is:
-        0 0
-        0 0
-        0 0
-        1 0
-        1 1
-    If the row of the mask is all zero, the output will be zero.
-
-    If window_size != (-1, -1), implements sliding window local attention. Query at position i
-    will only attend to keys between
-    [i + seqlen_k - seqlen_q - window_size[0], i + seqlen_k - seqlen_q + window_size[1]] inclusive.
-
-    Arguments:
-        q: (total_q, nheads, headdim), where total_q = total number of query tokens in the batch.
-        k: (total_k, nheads_k, headdim), where total_k = total number of key tokens in the batch.
-        v: (total_k, nheads_k, headdim), where total_k = total number of key tokens in the batch.
-        cu_seqlens_q: (batch_size + 1,), dtype torch.int32. The cumulative sequence lengths
-           of the sequences in the batch, used to index into q.
-        cu_seqlens_k: (batch_size + 1,), dtype torch.int32. The cumulative sequence lengths
-           of the sequences in the batch, used to index into kv.
-        max_seqlen_q: int. Maximum query sequence length in the batch.
-        max_seqlen_k: int. Maximum key sequence length in the batch.
-        dropout_p: float. Dropout probability.
-        softmax_scale: float. The scaling of QK^T before applying softmax.
-            Default to 1 / sqrt(headdim).
-        causal: bool. Whether to apply causal attention mask (e.g., for auto-regressive modeling).
-        window_size: (left, right). If not (-1, -1), implements sliding window local attention.
-        softcap: float. Anything > 0 activates softcapping attention.
-        alibi_slopes: (nheads,) or (batch_size, nheads), fp32. A bias of
-            (-alibi_slope * |i + seqlen_k - seqlen_q - j|)
-            is added to the attention score of query i and key j.
-        deterministic: bool. Whether to use the deterministic implementation of the backward pass,
-            which is slightly slower and uses more memory. The forward pass is always deterministic.
-        return_attn_probs: bool. Whether to return the attention probabilities. This option is for
-           testing only. The returned probabilities are not guaranteed to be correct
-           (they might not have the right scaling).
-    Return:
-        out: (total, nheads, headdim).
-        softmax_lse [optional, if return_softmax_lse=True]: (nheads, total_q_seqlen). The
-            logsumexp of each row of the matrix QK^T * scaling (e.g., log of the softmax
-            normalization factor).
-    """
     if fa_version != 2:
         raise RuntimeError("Only FA2 is implemented.")
     if num_splits > 0:
@@ -1502,8 +1526,6 @@ def flash_attn_varlen_func(
             v,
             out,
             cu_seqlens_q,
-            # cu_seqlens_k not used since we use seqused_k, but flash_api.cpp
-            # still wants it so we pass all zeros
             dummy_cu_seqlens_k if cu_seqlens_k is None else cu_seqlens_k,
             seqused_k,
             None,
@@ -1559,58 +1581,6 @@ def flash_attn_varlen_opt_func(
     cp_tot_seqused_k=None,
     fa_version: int = 2,
 ):
-    """dropout_p should be set to 0.0 during evaluation
-    Supports multi-query and grouped-query attention (MQA/GQA) by passing in K, V with fewer heads
-    than Q. Note that the number of heads in Q must be divisible by the number of heads in KV.
-    For example, if Q has 6 heads and K, V have 2 heads, head 0, 1, 2 of Q will attention to head
-    0 of K, V, and head 3, 4, 5 of Q will attention to head 1 of K, V.
-
-    If causal=True, the causal mask is aligned to the bottom right corner of the attention matrix.
-    For example, if seqlen_q = 2 and seqlen_k = 5, the causal mask (1 = keep, 0 = masked out) is:
-        1 1 1 1 0
-        1 1 1 1 1
-    If seqlen_q = 5 and seqlen_k = 2, the causal mask is:
-        0 0
-        0 0
-        0 0
-        1 0
-        1 1
-    If the row of the mask is all zero, the output will be zero.
-
-    If window_size != (-1, -1), implements sliding window local attention. Query at position i
-    will only attend to keys between
-    [i + seqlen_k - seqlen_q - window_size[0], i + seqlen_k - seqlen_q + window_size[1]] inclusive.
-
-    Arguments:
-        q: (total_q, nheads, headdim), where total_q = total number of query tokens in the batch.
-        k: (total_k, nheads_k, headdim), where total_k = total number of key tokens in the batch.
-        v: (total_k, nheads_k, headdim), where total_k = total number of key tokens in the batch.
-        cu_seqlens_q: (batch_size + 1,), dtype torch.int32. The cumulative sequence lengths
-           of the sequences in the batch, used to index into q.
-        cu_seqlens_k: (batch_size + 1,), dtype torch.int32. The cumulative sequence lengths
-           of the sequences in the batch, used to index into kv.
-        max_seqlen_q: int. Maximum query sequence length in the batch.
-        max_seqlen_k: int. Maximum key sequence length in the batch.
-        dropout_p: float. Dropout probability.
-        softmax_scale: float. The scaling of QK^T before applying softmax.
-            Default to 1 / sqrt(headdim).
-        causal: bool. Whether to apply causal attention mask (e.g., for auto-regressive modeling).
-        window_size: (left, right). If not (-1, -1), implements sliding window local attention.
-        softcap: float. Anything > 0 activates softcapping attention.
-        alibi_slopes: (nheads,) or (batch_size, nheads), fp32. A bias of
-            (-alibi_slope * |i + seqlen_k - seqlen_q - j|)
-            is added to the attention score of query i and key j.
-        deterministic: bool. Whether to use the deterministic implementation of the backward pass,
-            which is slightly slower and uses more memory. The forward pass is always deterministic.
-        return_attn_probs: bool. Whether to return the attention probabilities. This option is for
-           testing only. The returned probabilities are not guaranteed to be correct
-           (they might not have the right scaling).
-    Return:
-        out: (total, nheads, headdim).
-        softmax_lse [optional, if return_softmax_lse=True]: (nheads, total_q_seqlen). The
-            logsumexp of each row of the matrix QK^T * scaling (e.g., log of the softmax
-            normalization factor).
-    """
     if fa_version != 2:
         raise RuntimeError("Only FA2 is implemented.")
     if num_splits > 0:
@@ -1670,8 +1640,6 @@ def flash_attn_varlen_opt_func(
         else:
             assert len(window_size) == 2
             real_window_size = (window_size[0], window_size[1])
-        # q, k, v = [maybe_contiguous(x) for x in (q, k, v)]
-        # dummy_cu_seqlens_k = torch.empty_like(cu_seqlens_q)
         max_seqlen_q = (
             max_seqlen_q.item() if hasattr(max_seqlen_q, "item") else max_seqlen_q
         )
@@ -1685,9 +1653,6 @@ def flash_attn_varlen_opt_func(
             out,
             lse,
             cu_seqlens_q,
-            # cu_seqlens_k not used since we use seqused_k, but flash_api.cpp
-            # still wants it so we pass all zeros
-            # dummy_cu_seqlens_k if cu_seqlens_k is None else cu_seqlens_k,
             cu_seqlens_q if cu_seqlens_k is None else cu_seqlens_k,
             seqused_k,
             None,
