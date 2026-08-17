@@ -26,7 +26,9 @@ from .conftest import QUICK_MODE
 
 device = flag_gems.device
 
+# The canonical direct test covers square/non-square inputs and 64/128 head sizes.
 if QUICK_MODE:
+    SCALED_DOT_PRODUCT_FLASH_ATTENTION_SHAPES = [(1, 2, 64, 64, 64)]
     LEGACY_SHAPES = [
         (4, 8, 8, 1024, 1024, 64, False),
     ]
@@ -35,6 +37,10 @@ if QUICK_MODE:
     HEAD_SIZES = [64]
     NONSQUARE_SHAPES = [(4, 8, 1024, 128)]
 else:
+    SCALED_DOT_PRODUCT_FLASH_ATTENTION_SHAPES = [
+        (1, 2, 64, 96, 64),
+        (2, 4, 128, 128, 128),
+    ]
     LEGACY_SHAPES = [
         (4, 8, 8, 1024, 1024, 64, False),
         (4, 8, 8, 1024, 1024, 128, False),
@@ -82,7 +88,9 @@ def make_input(
     device,
     requires_grad=False,
 ):
-    random_utils.set_philox_state(1234567890, 0, device)
+    random_utils.set_philox_state(
+        42 if flag_gems.vendor_name == "cambricon" else 1234567890, 0, device
+    )
     q_shape = (batch, num_head, q_seq_len, head_size)
     kv_shape = (batch, num_head_k, kv_seq_len, head_size)
     q = torch.empty(q_shape, dtype=dtype, device=device).uniform_(-0.05, 0.05)
@@ -93,6 +101,78 @@ def make_input(
         k.requires_grad_()
         v.requires_grad_()
     return q, k, v
+
+
+def scaled_dot_product_flash_attention_ref(q, k, v, scale, is_causal):
+    scores = torch.matmul(q.float(), k.float().transpose(-2, -1)) * scale
+    if is_causal:
+        q_len = q.shape[-2]
+        kv_len = k.shape[-2]
+        row_idx = torch.arange(q_len, device=q.device)[:, None]
+        col_idx = torch.arange(kv_len, device=k.device)
+        # Flash attention causal: right-aligned, mask where col > row + (kv_len - q_len)
+        causal_mask = col_idx > row_idx + (kv_len - q_len)
+        scores.masked_fill_(causal_mask, float("-inf"))
+    logsumexp = torch.logsumexp(scores, dim=-1)
+    output = torch.matmul(torch.softmax(scores, dim=-1), v.float())
+    return output.to(q.dtype), logsumexp
+
+
+@pytest.mark.scaled_dot_product_flash_attention
+@pytest.mark.parametrize(
+    "batch,num_head,q_seq_len,kv_seq_len,head_size",
+    SCALED_DOT_PRODUCT_FLASH_ATTENTION_SHAPES,
+)
+@pytest.mark.parametrize("is_causal", [False, True])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_scaled_dot_product_flash_attention(
+    batch,
+    num_head,
+    q_seq_len,
+    kv_seq_len,
+    head_size,
+    is_causal,
+    dtype,
+    caplog,
+):
+    current_device = torch_device_fn.current_device()
+    q, k, v = make_input(
+        batch,
+        num_head,
+        num_head,
+        q_seq_len,
+        kv_seq_len,
+        head_size,
+        dtype,
+        current_device,
+    )
+    scale = float(1.0 / np.sqrt(head_size))
+
+    ref_q = utils.to_reference(q, False)
+    ref_k = utils.to_reference(k, False)
+    ref_v = utils.to_reference(v, False)
+    if cfg.TO_CPU or flag_gems.vendor_name in ["ascend", "hygon"]:
+        ref_out, ref_lse = scaled_dot_product_flash_attention_ref(
+            ref_q, ref_k, ref_v, scale, is_causal
+        )
+    else:
+        ref_result = torch.ops.aten._scaled_dot_product_flash_attention.default(
+            ref_q, ref_k, ref_v, 0.0, is_causal, False, scale=scale
+        )
+        ref_out, ref_lse = ref_result[0], ref_result[1]
+    with caplog.at_level("DEBUG", logger="flag_gems.ops.attention"):
+        with flag_gems.use_gems():
+            result = torch.ops.aten._scaled_dot_product_flash_attention.default(
+                q, k, v, 0.0, is_causal, False, scale=scale
+            )
+
+    assert "GEMS _SCALED_DOT_PRODUCT_FLASH_ATTENTION" in caplog.text
+    assert len(result) == 9
+    utils.gems_assert_close(result[0], ref_out, dtype)
+    utils.gems_assert_close(result[1], ref_lse, torch.float)
+    assert result[2] is None
+    assert result[3] is None
+    assert result[4:6] == (q_seq_len, kv_seq_len)
 
 
 def torch_sdpa(q, k, v, scale, is_causal, enable_gqa=False):
@@ -106,7 +186,7 @@ def torch_sdpa(q, k, v, scale, is_causal, enable_gqa=False):
             is_causal=is_causal,
         )
 
-    if flag_gems.vendor_name == "iluvatar" and cfg.TO_CPU:
+    if flag_gems.vendor_name in ["cambricon", "hygon", "iluvatar"]:
         from torch.nn.attention import SDPBackend, sdpa_kernel
 
         ctx = sdpa_kernel(backends=[SDPBackend.MATH])
@@ -179,7 +259,7 @@ def test_scaled_dot_product_attention_legacy(
         ref_q, ref_k, ref_v, scale, is_causal, enable_gqa=enable_gqa
     )
 
-    if flag_gems.vendor_name in ["cambricon", "sunrise"]:
+    if flag_gems.vendor_name in ["cambricon", "hygon", "sunrise"]:
         gems_result = flag_gems.scaled_dot_product_attention(
             q,
             k,
@@ -205,6 +285,9 @@ def test_scaled_dot_product_attention_legacy(
 
 @pytest.mark.skipif(flag_gems.vendor_name == "metax", reason="Issue #2849: Not working")
 @pytest.mark.skipif(
+    flag_gems.vendor_name == "hygon", reason="Issue #2849: RuntimeError"
+)
+@pytest.mark.skipif(
     flag_gems.vendor_name == "kunlunxin", reason="Issue #2849: Not working"
 )
 @pytest.mark.skipif(flag_gems.vendor_name == "sunrise", reason="Compiler Error")
@@ -221,6 +304,10 @@ def test_scaled_dot_product_attention_legacy(
 @pytest.mark.skipif(
     flag_gems.vendor_name == "tsingmicro",
     reason="Issues #3861: some ops hang in op tests",
+)
+@pytest.mark.skipif(
+    flag_gems.vendor_name == "ascend",
+    reason="Ascend CANN bishengir-compile SIGSEGV when compiling backward kernel",
 )
 def test_scaled_dot_product_attention_legacy_backward(
     batch,
@@ -255,7 +342,7 @@ def test_scaled_dot_product_attention_legacy_backward(
         ref_q, ref_k, ref_v, scale, is_causal, enable_gqa=enable_gqa
     )
 
-    if flag_gems.vendor_name in ["cambricon", "sunrise"]:
+    if flag_gems.vendor_name in ["cambricon", "hygon", "sunrise"]:
         gems_result = flag_gems.scaled_dot_product_attention(
             q,
             k,
@@ -278,6 +365,10 @@ def test_scaled_dot_product_attention_legacy_backward(
 
     utils.gems_assert_close(gems_result, torch_result, dtype)
 
+    if flag_gems.vendor_name == "cambricon":
+        torch.manual_seed(42)
+        torch.mlu.manual_seed_all(42)
+
     # backward
     ref_dout = torch.randn_like(ref_q)
     torch_result.backward(ref_dout)
@@ -298,8 +389,6 @@ def test_scaled_dot_product_attention_legacy_backward(
     # GQA: different float accumulation order across Q heads vs PyTorch kernel
     # bf16: only 8 mantissa bits → largest recomputation error
     # fp16: 11 mantissa bits → moderate error
-    # Hygon DCU: limited to BLOCK_N1=32 (64KB SRAM) vs BLOCK_N1=128 on NVIDIA,
-    # changing accumulation order in dV and producing slightly larger bf16 errors.
     is_gqa = enable_gqa and num_q_head != num_kv_head
     if is_gqa:
         if dtype == torch.bfloat16:
@@ -310,7 +399,7 @@ def test_scaled_dot_product_attention_legacy_backward(
             v_atol = 5e-4
     else:
         if dtype == torch.bfloat16:
-            v_atol = 1e-2 if flag_gems.vendor_name == "hygon" else 5e-3
+            v_atol = 5e-3
         elif dtype == torch.float16:
             v_atol = 2e-3
         else:

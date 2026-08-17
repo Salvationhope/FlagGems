@@ -591,63 +591,48 @@ def _attn_bwd_dq(
 
 config_backward = runtime.get_tuned_config("attention_bwd")
 
-# Small head-dim configs for the backward kernel.
-# When BLOCK_DMODEL <= 32, the standard configs (BLOCK_N1=128, warps=4) can
-# exceed shared memory capacity on some hardware/Triton versions due to the
-# large shared memory footprint of tl.dot operands staged for pipelining.
-# These configs use BLOCK_N1=64 which halves the shared memory requirement
-# for the key/value tiles in the dK/dV section.
-SMALL_HEAD_DIM_BWD_CONFIGS = [
-    triton.Config(
-        {"BLOCK_M1": BM1, "BLOCK_N1": BN1, "BLOCK_M2": BM2, "BLOCK_N2": BN2},
-        num_stages=s,
-        num_warps=w,
-    )
-    for (BM1, BN1, BM2, BN2) in [
-        (32, 64, 64, 32),
+# Ascend-specific: add small head-dim configs and prune callback to avoid
+# shared memory overflow when compiling the backward Triton kernel.
+if runtime.device.name == "npu":
+    SMALL_HEAD_DIM_BWD_CONFIGS = [
+        triton.Config(
+            {"BLOCK_M1": BM1, "BLOCK_N1": BN1, "BLOCK_M2": BM2, "BLOCK_N2": BN2},
+            num_stages=s,
+            num_warps=w,
+        )
+        for (BM1, BN1, BM2, BN2) in [
+            (32, 64, 64, 32),
+        ]
+        for s in [2, 3, 4]
+        for w in [4, 8]
     ]
-    for s in [2, 3, 4]
-    for w in [4, 8]
-]
-config_backward = config_backward + SMALL_HEAD_DIM_BWD_CONFIGS
+    config_backward = config_backward + SMALL_HEAD_DIM_BWD_CONFIGS
 
-
-def _prune_bwd_configs(configs, named_args, **kwargs):
-    """Filter backward configs based on BLOCK_DMODEL and divisibility constraints.
-
-    1. filter configs violating divisibility constraints (BLOCK_N1 % BLOCK_M1 != 0 or
-       BLOCK_M2 % BLOCK_N2 != 0) to prevent compiler assertion failures.
-    2. for small head dimensions (BLOCK_DMODEL <= 32): filter configs exceeding
-       shared memory / register limits.
-    """
-    # filter configs violating divisibility constraints, use .get() to avoid KeyError
-    configs = [
-        c
-        for c in configs
-        if (c.kwargs.get("BLOCK_N1", 64) % c.kwargs.get("BLOCK_M1", 32) == 0)
-        and (c.kwargs.get("BLOCK_M2", 64) % c.kwargs.get("BLOCK_N2", 32) == 0)
-    ]
-
-    # shared memory overflow protection for small head dimension scenarios
-    BLOCK_DMODEL = kwargs.get("BLOCK_DMODEL", named_args.get("BLOCK_DMODEL", 128))
-    if BLOCK_DMODEL <= 32:
-        pruned = [
+    def _prune_bwd_configs(configs, named_args, **kwargs):
+        configs = [
             c
             for c in configs
-            if c.kwargs.get("BLOCK_N1", 64) <= 64 and c.kwargs.get("BLOCK_M1", 32) <= 32
+            if (c.kwargs.get("BLOCK_N1", 64) % c.kwargs.get("BLOCK_M1", 32) == 0)
+            and (c.kwargs.get("BLOCK_M2", 64) % c.kwargs.get("BLOCK_N2", 32) == 0)
         ]
-        return pruned if pruned else configs
+        BLOCK_DMODEL = kwargs.get("BLOCK_DMODEL", named_args.get("BLOCK_DMODEL", 128))
+        if BLOCK_DMODEL <= 32:
+            pruned = [
+                c
+                for c in configs
+                if c.kwargs.get("BLOCK_N1", 64) <= 64
+                and c.kwargs.get("BLOCK_M1", 32) <= 32
+            ]
+            return pruned if pruned else configs
+        return configs
 
-    return configs
-
-
-# Only register the prune callback for Triton versions 3.6.0 <= version < 3.8.0
-# where the shared memory overflow bug exists (see triton/issues/10573).
-_bwd_prune_configs = (
-    {"early_config_prune": _prune_bwd_configs}
-    if _Version("3.6.0") <= _Version(triton.__version__) < _Version("3.8.0")
-    else {}
-)
+    _bwd_prune_configs = (
+        {"early_config_prune": _prune_bwd_configs}
+        if _Version("3.6.0") <= _Version(triton.__version__) < _Version("3.8.0")
+        else {}
+    )
+else:
+    _bwd_prune_configs = {}
 
 
 @libentry()
@@ -1313,6 +1298,44 @@ def scaled_dot_product_attention(
     )
 
 
+def scaled_dot_product_flash_attention(
+    query,
+    key,
+    value,
+    dropout_p=0.0,
+    is_causal=False,
+    return_debug_mask=False,
+    *,
+    scale=None,
+):
+    logger.debug("GEMS _SCALED_DOT_PRODUCT_FLASH_ATTENTION")
+
+    B, H, S_q, D = query.shape
+    S_kv = key.shape[2]
+
+    q = query.transpose(1, 2)
+    k = key.transpose(1, 2)
+    v = value.transpose(1, 2)
+
+    out, lse, philox_seed, philox_offset, debug_mask = flash_attention_forward(
+        q,
+        k,
+        v,
+        cumulative_sequence_length_q=None,
+        cumulative_sequence_length_k=None,
+        max_q=S_q,
+        max_k=S_kv,
+        dropout_p=dropout_p,
+        is_causal=is_causal,
+        return_debug_mask=return_debug_mask,
+        scale=scale,
+    )
+
+    out = out.transpose(1, 2)
+
+    return (out, lse, None, None, S_q, S_kv, philox_seed, philox_offset, debug_mask)
+
+
 def flash_attention_forward(
     query,
     key,
@@ -1337,6 +1360,64 @@ def flash_attention_forward(
     assert (
         cumulative_sequence_length_q is None and cumulative_sequence_length_k is None
     ), "varlen is not supported yet."
+
+    # For Ascend NPU, use PyTorch native implementation which handles non-square causal correctly
+    if runtime.device.name == "npu":
+        # Transpose from (B, S, H, D) to (B, H, S, D)
+        query_t = query.transpose(1, 2)
+        key_t = key.transpose(1, 2)
+        value_t = value.transpose(1, 2)
+
+        # Compute attention scores for lse
+        softmax_scale = (
+            scale if scale is not None else (1.0 / math.sqrt(query.shape[-1]))
+        )
+
+        # Compute Q @ K^T and apply scaling
+        scores = torch.matmul(query_t, key_t.transpose(-2, -1)) * softmax_scale
+
+        # Build explicit causal mask for non-square case (q_len < kv_len)
+        # torch_npu's is_causal may not handle the offset correctly
+        q_len = query_t.shape[2]
+        kv_len = key_t.shape[2]
+        attn_mask_2d = None
+        if is_causal:
+            offset = kv_len - q_len
+            q_index = torch.arange(q_len, device=query.device)[:, None]
+            k_index = torch.arange(kv_len, device=query.device)
+            causal_mask = k_index > (q_index + offset)
+            scores = scores.masked_fill(causal_mask, float("-inf"))
+            attn_mask_2d = torch.zeros(
+                q_len, kv_len, device=query.device, dtype=query_t.dtype
+            )
+            attn_mask_2d.masked_fill_(causal_mask, float("-inf"))
+
+        # Compute log-sum-exp before softmax (for numerical stability)
+        lse = torch.logsumexp(scores.float(), dim=-1)  # Shape: (B, H, S), dtype float32
+
+        # Use PyTorch native scaled_dot_product_attention for the actual output
+        out = torch.nn.functional.scaled_dot_product_attention(
+            query_t,
+            key_t,
+            value_t,
+            attn_mask=attn_mask_2d,
+            dropout_p=dropout_p,
+            is_causal=False,
+            scale=softmax_scale,
+        )
+
+        # Transpose back from (B, H, S, D) to (B, S, H, D)
+        out = out.transpose(1, 2)
+
+        # Transpose lse from (B, H, S) to (B, H, S) (already in correct format for flash attention)
+        # Flash attention expects lse in shape (B, H, S)
+
+        # Return with dummy values for philox_seed, philox_offset, and debug_mask
+        philox_seed = torch.tensor(0, dtype=torch.int64, device=query.device)
+        philox_offset = torch.tensor(0, dtype=torch.int64, device=query.device)
+        debug_mask = None
+
+        return (out, lse, philox_seed, philox_offset, debug_mask)
 
     HEAD_DIM_Q, HEAD_DIM_K = query.shape[-1], key.shape[-1]
     HEAD_DIM_V = value.shape[-1]
