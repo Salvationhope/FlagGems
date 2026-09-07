@@ -283,9 +283,9 @@ def test_scaled_dot_product_attention_legacy(
 
 
 @pytest.mark.skipif(flag_gems.vendor_name == "metax", reason="Issue #2849: Not working")
-@pytest.mark.skipif(
-    flag_gems.vendor_name == "hygon", reason="Issue #2849: RuntimeError"
-)
+# @pytest.mark.skipif(
+#     flag_gems.vendor_name == "hygon", reason="Issue #2849: RuntimeError"
+# )
 @pytest.mark.skipif(
     flag_gems.vendor_name == "kunlunxin", reason="Issue #2849: Not working"
 )
