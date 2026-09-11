@@ -439,7 +439,9 @@ def _attn_bwd_dkdv(
             mask &= offs_m[None, :] >= offs_n[:, None]
         pT = tl.where(mask, pT, 0.0)  # (BLOCK_N1, BLOCK_M1)
 
-        do = tl.load(do_ptrs, mask=offs_m_mask[:, None], other=0.0)  # (BLOCK_M1, BLOCK_DMODEL)
+        do = tl.load(
+            do_ptrs, mask=offs_m_mask[:, None], other=0.0
+        )  # (BLOCK_M1, BLOCK_DMODEL)
 
         # Compute dV.
         dv += tl.dot(pT, do.to(tl.float32))  # (BLOCK_N1, BLOCK_DMODEL)
@@ -531,11 +533,58 @@ def _attn_bwd_dq(
 
 config_backward = runtime.get_tuned_config("attention_bwd")
 
+# Small head-dim configs for the backward kernel.
+# When BLOCK_DMODEL <= 32, the standard configs (BLOCK_N1=128, warps=4) can
+# exceed shared memory capacity on some hardware/Triton versions due to the
+# large shared memory footprint of tl.dot operands staged for pipelining.
+# These configs use BLOCK_N1=64 which halves the shared memory requirement
+# for the key/value tiles in the dK/dV section.
+SMALL_HEAD_DIM_BWD_CONFIGS = [
+    triton.Config(
+        {"BLOCK_M1": BM1, "BLOCK_N1": BN1, "BLOCK_M2": BM2, "BLOCK_N2": BN2},
+        num_stages=s,
+        num_warps=w,
+    )
+    for (BM1, BN1, BM2, BN2) in [
+        (32, 64, 64, 32),
+    ]
+    for s in [2, 3, 4]
+    for w in [4, 8]
+]
+config_backward = config_backward + SMALL_HEAD_DIM_BWD_CONFIGS
+
+
+def _prune_bwd_configs(configs, named_args, **kwargs):
+    """Filter backward configs based on BLOCK_DMODEL to avoid shared memory overflow.
+
+    Hygon GPUs have a 64KB shared memory limit. For head_dim=128 (BLOCK_DMODEL=128),
+    configs with BLOCK_N1=128 require 98KB, exceeding the hardware limit.
+
+    This function filters configs to ensure they fit within Hygon's shared memory budget:
+    - For BLOCK_DMODEL=128: only allow BLOCK_N1 <= 64
+    - For BLOCK_DMODEL <= 32: also restrict BLOCK_M1 <= 32 (from upstream)
+    """
+    BLOCK_DMODEL = kwargs.get("BLOCK_DMODEL", named_args.get("BLOCK_DMODEL", 128))
+
+    pruned = []
+    for c in configs:
+        # For head_dim=128, limit BLOCK_N1 to avoid exceeding 64KB shared memory
+        if BLOCK_DMODEL == 128 and c.kwargs.get("BLOCK_N1", 128) > 64:
+            continue
+        # For small head dims, apply upstream constraints
+        if BLOCK_DMODEL <= 32:
+            if c.kwargs.get("BLOCK_N1", 128) > 64 or c.kwargs.get("BLOCK_M1", 32) > 32:
+                continue
+        pruned.append(c)
+
+    return pruned if pruned else configs
+
 
 @libentry()
 @libtuner(
     configs=config_backward,
     key=["KV_CTX", "BLOCK_DMODEL"],
+    prune_configs_by={"early_config_prune": _prune_bwd_configs},
 )
 @triton.jit
 def _attn_bwd(
