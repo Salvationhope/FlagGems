@@ -578,39 +578,48 @@ def _attn_bwd_dq(
 config_backward = runtime.get_tuned_config("attention_bwd")
 
 
-def _prune_attn_bwd_configs(configs, nargs, **kwargs):
-    """Restrict _attn_bwd tuning candidates that crash on Hopper (sm90).
+SMALL_HEAD_DIM_BWD_CONFIGS = [
+    triton.Config(
+        {"BLOCK_M1": BM1, "BLOCK_N1": BN1, "BLOCK_M2": BM2, "BLOCK_N2": BN2},
+        num_stages=s,
+        num_warps=w,
+    )
+    for (BM1, BN1, BM2, BN2) in [
+        (32, 64, 64, 32),
+    ]
+    for s in [2, 3, 4]
+    for w in [4, 8]
+]
+config_backward = config_backward + SMALL_HEAD_DIM_BWD_CONFIGS
 
-    Empirically verified runtime "illegal memory access" faults (memcheck-clean,
-    deterministic per shape/dtype/prior-allocations, and never triggered by
-    pure kernel indexing):
-    - BLOCK_DMODEL <= 32 (head_dim <= 32): the num_warps >= 4 WGMMA path faults
-      (num_warps <= 2, the non-WGMMA path, is always safe) - a Triton WGMMA
-      codegen defect.
-    - BLOCK_DMODEL > 32: the single-warpgroup (num_warps = 4) path faults for
-      some M2 = 128 tiles depending on allocation layout; num_warps = 8 (two
-      warpgroups) is stable across every shape/dtype/order tried.
 
-    Rewriting candidates keeps the autotuner from ever benchmarking/selecting
-    a crashing config.
+def _prune_attn_bwd_configs(configs, named_args, **kwargs):
+    """Filter backward configs based on BLOCK_DMODEL to avoid hardware issues.
+
+    - For BLOCK_DMODEL=128: only allow BLOCK_N1 <= 64 (shared memory limit on
+      some backends).
+    - For BLOCK_DMODEL <= 32: restrict BLOCK_N1 <= 64 and BLOCK_M1 <= 32.
+    - Reject configs where BLOCK_M2 % BLOCK_N2 != 0 (required by _attn_bwd_dq).
     """
+    BLOCK_DMODEL = kwargs.get("BLOCK_DMODEL", named_args.get("BLOCK_DMODEL", 128))
+
     pruned = []
     for config in configs:
-        if kwargs.get("BLOCK_DMODEL", 64) <= 32:
-            num_warps = min(config.num_warps, 2)
-        else:
-            num_warps = max(config.num_warps, 8)
-        if num_warps != config.num_warps:
-            config = triton.Config(
-                config.kwargs,
-                num_warps=num_warps,
-                num_stages=config.num_stages,
-                num_ctas=config.num_ctas,
-                maxnreg=config.maxnreg,
-                pre_hook=config.pre_hook,
-            )
+        m2 = config.kwargs.get("BLOCK_M2", 128)
+        n2 = config.kwargs.get("BLOCK_N2", 32)
+        if m2 % n2 != 0:
+            continue
+        if BLOCK_DMODEL == 128 and config.kwargs.get("BLOCK_N1", 128) > 64:
+            continue
+        if BLOCK_DMODEL <= 32:
+            if (
+                config.kwargs.get("BLOCK_N1", 128) > 64
+                or config.kwargs.get("BLOCK_M1", 32) > 32
+            ):
+                continue
         pruned.append(config)
-    return pruned
+
+    return pruned if pruned else configs
 
 
 @libentry()
@@ -683,15 +692,21 @@ def _attn_bwd(
     offs_k = tl.arange(0, BLOCK_DMODEL)
     hd_mask = offs_k < BLOCK_DMODEL_ACTUAL  # head dim mask
 
-    # dK/dV: only execute when this pid covers a valid KV block
-    start_n = pid * BLOCK_N1
-    if start_n < KV_CTX:
+    # Grid dim 0 = NUM_KV_BLOCKS + NUM_Q_BLOCKS.
+    # pid in [0, NUM_KV_BLOCKS) handles dK/dV.
+    # pid in [NUM_KV_BLOCKS, grid_dim_0) handles dQ.
+    NUM_KV_BLOCKS = tl.cdiv(KV_CTX, BLOCK_N1)
+    if pid < NUM_KV_BLOCKS:
+        # ============ dK/dV section ============
+        start_n = pid * BLOCK_N1
         dv = tl.zeros([BLOCK_N1, BLOCK_DMODEL], dtype=tl.float32)
         dk = tl.zeros([BLOCK_N1, BLOCK_DMODEL], dtype=tl.float32)
 
-        # load K and V: they stay in SRAM throughout the inner loop.
+        MASK_BLOCK_M1: tl.constexpr = BLOCK_M1 // BLK_SLICE_FACTOR
         offs_n = start_n + tl.arange(0, BLOCK_N1)
         offs_n_mask = offs_n < KV_CTX
+
+        # load K and V: they stay in SRAM throughout the inner loop.
         key = tl.load(
             K + offs_n[:, None] * stride_tok + offs_k[None, :] * stride_d,
             mask=offs_n_mask[:, None] & hd_mask[None, :],
@@ -703,15 +718,10 @@ def _attn_bwd(
             other=0.0,
         )
 
-        MASK_BLOCK_M1: tl.constexpr = BLOCK_M1 // BLK_SLICE_FACTOR
-
         # Causal: masked diagonal phase, then unmasked above-diagonal phase.
         # Non-causal: skip masked phase, single unmasked pass over all Q rows.
         if IS_CAUSAL:
-            # The causal mask is q_idx >= kv_idx, so for KV block starting at
-            # start_n, the first Q row that can attend is start_n itself.
             start_m = start_n
-            # Clamp to valid Q range
             if start_m < Q_CTX:
                 end_m = min(start_m + BLOCK_N1, Q_CTX)
                 num_steps = (end_m - start_m + MASK_BLOCK_M1 - 1) // MASK_BLOCK_M1
@@ -740,11 +750,10 @@ def _attn_bwd(
                     BLOCK_DMODEL_ACTUAL=BLOCK_DMODEL_ACTUAL,
                 )
                 start_m += num_steps * MASK_BLOCK_M1
-            # else: start_n >= Q_CTX, no Q rows can attend to this KV block
         else:
             start_m = 0
 
-        # Unmasked phase (shared): traverse remaining Q rows.
+        # Unmasked phase: traverse remaining Q rows.
         remaining_m = Q_CTX - start_m
         num_steps = (remaining_m + BLOCK_M1 - 1) // BLOCK_M1
         if num_steps > 0:
@@ -781,11 +790,12 @@ def _attn_bwd(
         dk_ptrs = DK + offs_n[:, None] * dk_stride_tok + offs_k[None, :] * stride_d
         tl.store(dk_ptrs, dk, mask=offs_n_mask[:, None] & hd_mask[None, :])
 
-    # dQ: only execute when this pid covers a valid Q block
-    start_m = pid * BLOCK_M2
-    if start_m < Q_CTX:
+    else:
+        # ============ dQ section ============
+        start_m = (pid - NUM_KV_BLOCKS) * BLOCK_M2
         offs_m = start_m + tl.arange(0, BLOCK_M2)
         offs_m_mask = offs_m < Q_CTX
+
         query = tl.load(
             Q + offs_m[:, None] * stride_tok + offs_k[None, :] * stride_d,
             mask=offs_m_mask[:, None] & hd_mask[None, :],
@@ -797,21 +807,14 @@ def _attn_bwd(
             mask=offs_m_mask[:, None] & hd_mask[None, :],
             other=0.0,
         )
+
         m = tl.load(M + offs_m, mask=offs_m_mask, other=float("inf"))
         m = m[:, None]
 
-        # _attn_bwd_dq requires BLOCK_M2 % BLOCK_N2 == 0. When AABS shrinks
-        # BLOCK_M2 below BLOCK_N2 (small Q_CTX), clamp the KV tile to a divisor
-        # of BLOCK_M2 instead of letting the static_assert fire.
-        MASK_BLOCK_N2: tl.constexpr = min(BLOCK_N2 // BLK_SLICE_FACTOR, BLOCK_M2)
-        stage2_block_n: tl.constexpr = (
-            BLOCK_N2 if BLOCK_M2 % BLOCK_N2 == 0 else MASK_BLOCK_N2
-        )
+        MASK_BLOCK_N2: tl.constexpr = BLOCK_N2 // BLK_SLICE_FACTOR
 
         if IS_CAUSAL:
             # Masked diagonal phase: KV columns [diag_n, end_n)
-            # diag_n is the KV position where the causal boundary starts for
-            # this Q block. Only needed when diag_n < KV_CTX.
             diag_n = min(start_m, KV_CTX)
             end_n = min(start_m + BLOCK_M2, KV_CTX)
             num_steps = (end_n - diag_n + MASK_BLOCK_N2 - 1) // MASK_BLOCK_N2
@@ -840,11 +843,9 @@ def _attn_bwd(
                     BLOCK_DMODEL_ACTUAL=BLOCK_DMODEL_ACTUAL,
                 )
 
-            # Unmasked phase: KV columns [0, diag_n), all fully visible.
-            stage2_num_steps = (diag_n + stage2_block_n - 1) // stage2_block_n
+            stage2_num_steps = (diag_n + BLOCK_N2 - 1) // BLOCK_N2
         else:
-            # Non-causal: single unmasked pass over all KV columns.
-            stage2_num_steps = (KV_CTX + stage2_block_n - 1) // stage2_block_n
+            stage2_num_steps = (KV_CTX + BLOCK_N2 - 1) // BLOCK_N2
 
         if stage2_num_steps > 0:
             dq = _attn_bwd_dq(
@@ -861,7 +862,7 @@ def _attn_bwd(
                 Q_CTX,  #
                 KV_CTX,  #
                 BLOCK_M2,
-                stage2_block_n,
+                BLOCK_N2,
                 BLOCK_DMODEL,  #
                 start_m,
                 0,
@@ -1079,14 +1080,7 @@ def scaled_dot_product_attention_backward(
     )
 
     grid = lambda meta: (
-        max(
-            triton.cdiv(
-                KV_CTX, meta["BLOCK_N1"]
-            ),  # _attn_bwd_dq traverse the key-value sequence
-            triton.cdiv(
-                Q_CTX, meta["BLOCK_M2"]
-            ),  # _attn_bwd_dkdv traverse the query sequence
-        ),
+        triton.cdiv(KV_CTX, meta["BLOCK_N1"]) + triton.cdiv(Q_CTX, meta["BLOCK_M2"]),
         1,
         BATCH * Q_HEAD,
     )
