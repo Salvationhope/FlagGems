@@ -704,6 +704,7 @@ from flag_gems.ops.multi_margin_loss import (
     multi_margin_loss_backward_out,
     multi_margin_loss_out,
 )
+from flag_gems.ops.multilabel_margin_loss_forward import multilabel_margin_loss_forward
 from flag_gems.ops.multinomial import multinomial
 from flag_gems.ops.multiply import multiply
 from flag_gems.ops.multiply_ import multiply_
@@ -760,6 +761,7 @@ from flag_gems.ops.ones_like import ones_like
 from flag_gems.ops.ormqr import ormqr
 from flag_gems.ops.pad import constant_pad_nd, pad
 from flag_gems.ops.pad_sequence import pad_sequence
+from flag_gems.ops.padded_dense_to_jagged_forward import _padded_dense_to_jagged_forward
 from flag_gems.ops.pairwise_distance import pairwise_distance
 from flag_gems.ops.pdist import pdist
 from flag_gems.ops.per_token_group_quant_fp8 import (
@@ -1026,6 +1028,7 @@ from flag_gems.ops.topk_w8a16_fp8 import topk_w8a16_fp8
 from flag_gems.ops.trace import trace
 from flag_gems.ops.trace_backward import trace_backward
 from flag_gems.ops.transpose import transpose
+from flag_gems.ops.transpose_copy import transpose_copy
 from flag_gems.ops.tril import tril, tril_, tril_out
 from flag_gems.ops.triu import triu, triu_
 from flag_gems.ops.true_divide import true_divide, true_divide_tensor
@@ -1175,6 +1178,7 @@ __all__ = [
     "_nested_view_from_buffer_copy",
     "_nested_view_from_jagged",
     "_nested_view_from_jagged_copy",
+    "_padded_dense_to_jagged_forward",
     "_pdist_backward",
     "_pdist_forward",
     "_prelu_kernel",
@@ -1823,6 +1827,7 @@ __all__ = [
     "multi_margin_loss_backward",
     "multi_margin_loss_backward_out",
     "multi_margin_loss_out",
+    "multilabel_margin_loss_forward",
     "multinomial",
     "multiply",
     "multiply_",
@@ -2172,6 +2177,7 @@ __all__ = [
     "trace",
     "trace_backward",
     "transpose",
+    "transpose_copy",
     "tril",
     "tril_",
     "tril_out",
