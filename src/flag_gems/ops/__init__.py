@@ -236,6 +236,7 @@ from flag_gems.ops.alpha_dropout_ import alpha_dropout_
 from flag_gems.ops.amax import amax
 from flag_gems.ops.amin import amin, amin_
 from flag_gems.ops.aminmax import aminmax
+from flag_gems.ops.and_scalar import and_scalar
 from flag_gems.ops.and_tensor import and_tensor
 from flag_gems.ops.angle import angle
 from flag_gems.ops.any import any, any_dim, any_dims
@@ -841,6 +842,7 @@ from flag_gems.ops.randn import randn
 from flag_gems.ops.randn_like import randn_like
 from flag_gems.ops.randperm import randperm
 from flag_gems.ops.range import range
+from flag_gems.ops.real import real, real_conjugate, real_device
 from flag_gems.ops.reciprocal import reciprocal, reciprocal_
 from flag_gems.ops.reflection_pad1d import reflection_pad1d, reflection_pad1d_out
 from flag_gems.ops.reflection_pad1d_backward import reflection_pad1d_backward
@@ -1338,6 +1340,7 @@ __all__ = [
     "amin",
     "amin_",
     "aminmax",
+    "and_scalar",
     "and_tensor",
     "angle",
     "any",
@@ -2020,6 +2023,9 @@ __all__ = [
     "randn_like",
     "randperm",
     "range",
+    "real",
+    "real_conjugate",
+    "real_device",
     "reciprocal",
     "reciprocal_",
     "reflection_pad1d",
