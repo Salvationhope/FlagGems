@@ -20,10 +20,6 @@ import flag_gems
 
 from . import accuracy_utils as utils
 
-# ``_reshape_alias`` starts with an underscore, and ``pytest.mark`` refuses to
-# generate a marker via attribute access for such names. Register it directly
-# on the MarkGenerator so ``@pytest.mark._reshape_alias`` and ``-m
-# _reshape_alias`` both work.
 setattr(
     pytest.mark,
     "_reshape_alias",
@@ -50,8 +46,8 @@ def test_accuracy__reshape_alias(input_shape, size, stride, dtype):
     ref_inp = utils.to_reference(inp)
 
     ref_out = torch.ops.aten._reshape_alias(ref_inp, size, stride)
-    with flag_gems.use_gems():
-        res_out = torch.ops.aten._reshape_alias(inp, size, stride)
+
+    res_out = flag_gems._reshape_alias(inp, size, stride)
 
     assert list(res_out.shape) == list(size)
     assert list(res_out.stride()) == list(stride)
