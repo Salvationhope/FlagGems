@@ -72,17 +72,16 @@ def test_native_batch_norm(shape, dtype, affine, caplog):
     )
 
     with caplog.at_level("DEBUG", logger="flag_gems.ops.native_batch_norm"):
-        with flag_gems.use_gems():
-            result = torch.ops.aten.native_batch_norm.default(
-                inp,
-                weight,
-                bias,
-                running_mean,
-                running_var,
-                True,
-                0.1,
-                1e-5,
-            )
+        result = flag_gems.native_batch_norm(
+            inp,
+            weight,
+            bias,
+            running_mean,
+            running_var,
+            True,
+            0.1,
+            1e-5,
+        )
 
     assert "GEMS NATIVE_BATCH_NORM" in caplog.text
     assert len(result) == len(ref_result) == 3

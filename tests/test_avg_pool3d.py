@@ -80,16 +80,15 @@ def test_avg_pool3d(
         divisor_override=divisor_override,
     )
 
-    with flag_gems.use_gems():
-        res_out = torch.ops.aten.avg_pool3d(
-            inp,
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=padding,
-            ceil_mode=ceil_mode,
-            count_include_pad=count_include_pad,
-            divisor_override=divisor_override,
-        )
+    res_out = flag_gems.avg_pool3d(
+        inp,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        ceil_mode=ceil_mode,
+        count_include_pad=count_include_pad,
+        divisor_override=divisor_override,
+    )
 
     gems_assert_close(res_out, ref_out, dtype)
 
