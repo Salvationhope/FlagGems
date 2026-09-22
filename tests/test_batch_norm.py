@@ -130,15 +130,16 @@ def test_batch_norm(shape, dtype, affine):
         eps=eps,
     )
 
-    with flag_gems.use_gems():
-        res_out = torch.nn.functional.batch_norm(
-            inp,
-            running_mean,
-            running_var,
-            weight=weight,
-            bias=bias,
-            eps=eps,
-        )
+    res_out = flag_gems.native_batch_norm(
+        inp,
+        weight,
+        bias,
+        running_mean,
+        running_var,
+        False,
+        0.1,
+        eps,
+    )[0]
 
     utils.gems_assert_close(res_out, ref_out, dtype)
     utils.gems_assert_close(running_mean, ref_running_mean, dtype)
@@ -192,23 +193,22 @@ def test_batch_norm_backward(shape, dtype, affine):
         eps,
         output_mask,
     )
-    with flag_gems.use_gems():
-        (
-            res_in_grad,
-            res_weight_grad,
-            res_bias_grad,
-        ) = torch.ops.aten.native_batch_norm_backward(
-            res_grad,
-            res_inp,
-            res_weight,
-            res_running_mean,
-            res_running_var,
-            res_save_mean,
-            res_save_invstd,
-            train,
-            eps,
-            output_mask,
-        )
+    (
+        res_in_grad,
+        res_weight_grad,
+        res_bias_grad,
+    ) = flag_gems.batch_norm_backward(
+        res_grad,
+        res_inp,
+        res_weight,
+        res_running_mean,
+        res_running_var,
+        res_save_mean,
+        res_save_invstd,
+        train,
+        eps,
+        output_mask,
+    )
 
     reduce_dim = math.prod(shape) // C
     utils.gems_assert_close(res_in_grad, ref_in_grad, dtype, reduce_dim=reduce_dim)

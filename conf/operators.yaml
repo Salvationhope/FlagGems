@@ -1698,6 +1698,8 @@ ops:
   - beta: '5.3'
 - id: batch_norm
   description: An internal operator used for implementing the `BatchNorm` functionality.
+  for:
+  - native_batch_norm
   labels:
   - aten
   kind:

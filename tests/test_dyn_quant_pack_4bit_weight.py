@@ -54,10 +54,9 @@ def test_dyn_quant_pack_4bit_weight(
     scales = scales_cpu.to(flag_gems.device)
     bias = None if bias_cpu is None else bias_cpu.to(flag_gems.device)
 
-    with flag_gems.use_gems():
-        actual = torch.ops.aten._dyn_quant_pack_4bit_weight(
-            weights, scales, bias, block_size, in_features, out_features
-        )
+    actual = flag_gems._dyn_quant_pack_4bit_weight(
+        weights, scales, bias, block_size, in_features, out_features
+    )
 
     assert actual.dtype == torch.float32
     # Align devices with the quick-cpu reference convention (see test_addmm.py).
@@ -72,5 +71,5 @@ def test_dyn_quant_pack_4bit_weight(
 def test_dyn_quant_pack_4bit_weight_rejects_float_weights():
     weights = torch.randn((4, 32), device=flag_gems.device)
     scales = torch.randn((4, 1), device=flag_gems.device)
-    with flag_gems.use_gems(), pytest.raises(RuntimeError, match="uint8"):
-        torch.ops.aten._dyn_quant_pack_4bit_weight(weights, scales, None, 64, 64, 4)
+    with pytest.raises(RuntimeError, match="uint8"):
+        flag_gems._dyn_quant_pack_4bit_weight(weights, scales, None, 64, 64, 4)
