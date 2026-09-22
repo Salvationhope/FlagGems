@@ -3776,7 +3776,7 @@ ops:
   stages:
   - beta: '5.3'
 - id: cumsum
-  destination: Returns the cumulative sum of elements of `input` in the dimension
+  description: Returns the cumulative sum of elements of `input` in the dimension
     `dim`.
   for:
   - cumsum
@@ -3798,7 +3798,7 @@ ops:
   stages:
   - alpha: '5.4'
 - id: cumsum_out
-  destination: 'Returns the cumulative sum of elements of `input` in the dimension
+  description: 'Returns the cumulative sum of elements of `input` in the dimension
     `dim`.
 
     It is a variant of `cumsum()`.
