@@ -27,6 +27,33 @@ ops:
   - NeuralNetwork
   stages:
   - alpha: '5.1'
+- id: _ctc_loss
+  description: 'Computes the CTC loss and the alpha lattice used by its backward pass.
+
+    '
+  for:
+  - _ctc_loss
+  - _ctc_loss.Tensor
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - NeuralNetwork
+  stages:
+  - alpha: '5.5'
+- id: _ctc_loss_out
+  description: A variant of `_ctc_loss` that allows the outputs to be assigned to
+    `out`.
+  for:
+  - _ctc_loss.out
+  - _ctc_loss.Tensor_out
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - NeuralNetwork
+  stages:
+  - alpha: '5.5'
 - id: _flash_attention_forward
   description: Run the canonical FlashAttention forward operator.
   for:
@@ -73,6 +100,17 @@ ops:
   - Tensor
   stages:
   - alpha: '5.4'
+- id: _saturate_weight_to_fp16
+  description: Triton kernel implementation for _saturate_weight_to_fp16.
+  for:
+  - _saturate_weight_to_fp16
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - Tensor
+  stages:
+  - alpha: '5.5'
 - id: _transformer_encoder_layer_fwd
   description: Triton kernel implementation for _transformer_encoder_layer_fwd.
   for:
@@ -1795,6 +1833,18 @@ ops:
   - NeuralNetwork
   stages:
   - alpha: '5.4'
+- id: batch_norm_with_update
+  description: Applies training-mode Batch Normalization using batch statistics and updates
+    running_mean/running_var in place.
+  for:
+  - _batch_norm_with_update
+  labels:
+  - KernelGen
+  - aten
+  kind:
+  - NeuralNetwork
+  stages:
+  - alpha: '5.5'
 - id: batch_norm_with_update_functional
   description: Functional variant of _batch_norm_with_update that applies training-mode
     Batch Normalization and updates running statistics.
@@ -3636,6 +3686,23 @@ ops:
   - Math
   stages:
   - alpha: '5.4'
+- id: cudnn_rnn
+  description: 'Vendor-agnostic RNN forward pass using Triton kernels that replaces
+    the cuDNN-backed _cudnn_rnn operator.  Supports RNN_RELU, RNN_TANH, LSTM and
+    GRU modes with multi-layer, bidirectional, LSTM projection (proj_size > 0),
+    dropout during training, and packed variable-length sequences.
+
+    '
+  for:
+  - _cudnn_rnn
+  labels:
+  - aten
+  - NoCPU
+  - KernelGen
+  kind:
+  - NeuralNetwork
+  stages:
+  - alpha: '5.4'
 - id: cudnn_rnn_backward
   description: 'Backward pass of a single-layer unidirectional cuDNN LSTM. Reimplements
     the
@@ -3775,6 +3842,22 @@ ops:
   - Math
   stages:
   - beta: '5.3'
+- id: cumprod_backward
+  description: |
+    Backward pass for `cumprod`. Given the output gradient, the forward input and the forward
+    output, computes the gradient with respect to the input. Zero elements along the reduction
+    dimension are handled explicitly: the reverse cumulative sum of `grad * output` divided by
+    `input` gives the gradient for non-zero positions, while the first zero position uses a
+    modified cumulative product. Accumulation is performed in float32 for numerical stability.
+  for:
+  - cumprod_backward
+  labels:
+  - aten
+  - Reduction
+  kind:
+  - Math
+  stages:
+  - alpha: '5.5.0'
 - id: cumsum
   description: Returns the cumulative sum of elements of `input` in the dimension
     `dim`.
@@ -4447,6 +4530,20 @@ ops:
   - NeuralNetwork
   stages:
   - stable: '3.0'
+- id: embedding_bag
+  description: 'Compute sums, means, or maxes of bags of embeddings, without instantiating
+    the intermediate embeddings.
+
+    '
+  for:
+  - embedding_bag
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - NeuralNetwork
+  stages:
+  - alpha: '5.4'
 - id: embedding_bag_dense_backward
   description: 'Computes the gradient for the backward pass of embedding_bag in dense
     mode.
@@ -9886,6 +9983,17 @@ ops:
     - NeuralNetwork
   stages:
     - alpha: '5.5'
+- id: matmul_backward
+  description: Computes gradients for matrix multiplication backward pass.
+  for:
+  - matmul_backward
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - BLAS
+  stages:
+  - alpha: '5.5'
 - id: matmul_bias_activation
   description: Fused matrix multiplication with bias addition and ReLU activation.
   for:
@@ -9918,6 +10026,29 @@ ops:
   - Math
   stages:
   - alpha: '5.4'
+- id: matrix_power
+  description: Triton kernel implementation for matrix_power.
+  for:
+  - matrix_power
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - Math
+  stages:
+  - alpha: '5.5'
+- id: matrix_power_out
+  description: An out variant of `matrix_power()` that writes the result into a
+    pre-allocated output tensor.
+  for:
+  - matrix_power.out
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - Math
+  stages:
+  - alpha: '5.5'
 - id: max
   description: Returns the maximum value of all elements in the `input` tensor.
   for:
@@ -11020,6 +11151,18 @@ ops:
   - NeuralNetwork
   stages:
   - alpha: '5.5'
+- id: native_norm
+  description: Computes the p-norm over all elements of the input tensor, reducing
+    to a scalar.
+  for:
+  - native_norm
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - Reduction
+  stages:
+  - alpha: '5.5.0'
 - id: ne
   description: Computes that `input` is not equal to `other` element-wise.
   for:
@@ -11148,6 +11291,20 @@ ops:
   - Math
   stages:
   - alpha: '5.4'
+- id: nested_tensor_from_mask
+  description: |
+    Builds a nested tensor from a padded dense tensor of shape (N, L, D) and a
+    boolean padding mask of shape (N, L), using the mask to determine the ragged
+    length of each component.
+  for:
+    - _nested_tensor_from_mask
+  labels:
+    - aten
+    - KernelGen
+  kind:
+    - Tensor
+  stages:
+    - alpha: '5.5.0'
 - id: nested_tensor_from_mask_left_aligned
   description: 'Checks whether a 3D tensor `t` (N * L * D) combined with a 2D boolean
     padding
@@ -11166,6 +11323,20 @@ ops:
   - Tensor
   stages:
   - alpha: '5.4'
+- id: nested_tensor_softmax_with_shape
+  description: |
+    Computes softmax over the last dimension of nested-tensor attention scores,
+    deriving the per-batch sequence length from the query tensor's nested shape
+    and masking the out-of-range entries to zero.
+  for:
+  - _nested_tensor_softmax_with_shape
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - Tensor
+  stages:
+  - alpha: '5.5.0'
 - id: nested_view_from_buffer_copy
   description: 'Creates a nested tensor from a flat buffer using component sizes,
     strides,
@@ -11548,6 +11719,22 @@ ops:
   - Distribution
   stages:
   - stable: '2.1'
+- id: normal_functional
+  description: |
+    Returns a fresh tensor of random numbers drawn from a normal distribution
+    parameterized by a float mean and a float std. This is the out-of-place
+    functional variant of normal_ (aten::normal_functional).
+  for:
+  - normal_functional
+  labels:
+  - aten
+  - KernelGen
+  - pointwise
+  - skip_precision_check
+  kind:
+  - Distribution
+  stages:
+  - alpha: '5.5.0'
 - id: normal_tensor_float
   description: 'Returns a tensor of random numbers drawn from separate normal distributions
 
@@ -11702,6 +11889,30 @@ ops:
   - Tensor
   stages:
   - stable: '2.1'
+- id: orgqr
+  description: 'Computes the first n columns of a product of Householder matrices.
+
+    Alias for torch.linalg.householder_product.'
+  for:
+  - orgqr
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - LinearAlg
+  stages:
+  - alpha: '5.5'
+- id: orgqr_out
+  description: Computes the Householder matrix product into the supplied output tensor.
+  for:
+  - orgqr.out
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - LinearAlg
+  stages:
+  - alpha: '5.5'
 - id: ormqr
   description: 'Computes the matrix-matrix multiplication of a product of Householder
     matrices
@@ -11785,6 +11996,19 @@ ops:
   - NeuralNetwork
   stages:
   - alpha: '5.5'
+- id: pad_packed_sequence
+  description: |
+    Pads a packed batch of variable length sequences back into a dense
+    (T, B, *) tensor together with the per-batch-element sequence lengths.
+  for:
+  - _pad_packed_sequence
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - Tensor
+  stages:
+  - alpha: '5.5.0'
 - id: pad_sequence
   description: Pads a list of variable length tensors with a given padding value and
     stacks them into a single padded batch tensor.
@@ -13423,6 +13647,17 @@ ops:
   - NeuralNetwork
   stages:
   - alpha: '5.3'
+- id: sample_dirichlet
+  description: Draws samples from a Dirichlet distribution parameterized by alpha.
+  for:
+  - _sample_dirichlet
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - Math
+  stages:
+  - alpha: '5.5'
 - id: scalar_tensor
   description: 'Creates a 0-dimensional (scalar) tensor from a Python numeric value.
 
@@ -13491,6 +13726,20 @@ ops:
   - NeuralNetwork
   stages:
   - alpha: '5.4'
+- id: scaled_dot_product_attention_math_for_mps
+  description: 'Computes scaled dot-product attention using the math-based implementation
+    for the MPS backend.
+
+    '
+  for:
+  - _scaled_dot_product_attention_math_for_mps
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - NeuralNetwork
+  stages:
+  - alpha: '5.5.0'
 - id: scaled_dot_product_cudnn_attention
   description: 'Computes scaled dot product attention using the cuDNN attention API
 
@@ -14767,6 +15016,18 @@ ops:
   - BLAS
   stages:
   - alpha: '5.4'
+- id: spdiags
+  description: Triton kernel implementation for _spdiags that builds a sparse matrix
+    from diagonals.
+  for:
+  - _spdiags
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - Math
+  stages:
+  - alpha: '5.5'
 - id: special_airy_ai
   description: 'Computes the Airy function Ai(x) for each element of the input tensor.
 
@@ -16788,6 +17049,17 @@ ops:
   - BLAS
   stages:
   - alpha: '5.5'
+- id: transform_bias_rescale_qkv
+  description: Triton kernel implementation for _transform_bias_rescale_qkv.
+  for:
+  - _transform_bias_rescale_qkv
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - NeuralNetwork
+  stages:
+  - alpha: '5.5'
 - id: transpose
   description: 'Returns a view of the original tensor with its two dimensions swapped.
 
@@ -16815,6 +17087,21 @@ ops:
     - aten
   kind:
     - Tensor
+  stages:
+    - alpha: '5.5'
+- id: trapz
+  description: |
+    Computes the trapezoidal rule along a dimension using constant spacing dx.
+    Integrates the input tensor along the specified dimension using the
+    trapezoidal rule with uniform spacing.
+  for:
+    - trapezoid.dx
+    - trapz.dx
+  labels:
+    - aten
+    - KernelGen
+  kind:
+    - Math
   stages:
     - alpha: '5.5'
 - id: tril
@@ -17485,6 +17772,31 @@ ops:
   - NeuralNetwork
   stages:
   - stable: '5.0'
+- id: upsample_nearest1d_backward
+  description: Triton kernel implementation for upsample_nearest1d_backward.
+  for:
+  - upsample_nearest1d_backward
+  labels:
+  - aten
+  - KernelGen
+  - Reduction
+  kind:
+  - NeuralNetwork
+  stages:
+  - alpha: '5.5'
+- id: upsample_nearest1d_backward_grad_input
+  description: A variant of `upsample_nearest1d_backward()` that writes the result
+    into the `grad_input` tensor.
+  for:
+  - upsample_nearest1d_backward.grad_input
+  labels:
+  - aten
+  - KernelGen
+  - Reduction
+  kind:
+  - NeuralNetwork
+  stages:
+  - alpha: '5.5'
 - id: upsample_nearest2d
   description: 'Upsamples the `input`, using nearest neighbours'' pixel values. The
     input has to be 4 dimensional.
@@ -17706,6 +18018,17 @@ ops:
   - Reduction
   stages:
   - alpha: '5.4'
+- id: vander
+  description: Generates a Vandermonde matrix from a 1-D input tensor.
+  for:
+  - vander
+  labels:
+  - aten
+  - KernelGen
+  kind:
+  - Tensor
+  stages:
+  - alpha: '5.5'
 - id: var
   description: Calculates the variance over all dimensions.
   for:

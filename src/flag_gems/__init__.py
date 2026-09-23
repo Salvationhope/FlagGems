@@ -27,6 +27,7 @@ from flag_gems.logging_utils import setup_flaggems_logging, teardown_flaggems_lo
 from flag_gems.modules import *  # noqa: F403
 from flag_gems.ops import *  # noqa: F403
 from flag_gems.ops._dirichlet_grad import _HAS_MAP_ELEMENTWISE
+from flag_gems.ops._upsample_nearest_exact2d import _upsample_nearest_exact2d_out
 from flag_gems.patches import *  # noqa: F403
 from flag_gems.patches import patch_empty_vllm  # noqa: F401
 from flag_gems.runtime import flagtune
@@ -124,6 +125,7 @@ _FULL_CONFIG = (
     ("_batch_norm_impl_index", _batch_norm_impl_index),
     ("_batch_norm_impl_index_backward", _batch_norm_impl_index_backward),
     ("_batch_norm_no_update", _batch_norm_no_update),
+    ("_batch_norm_with_update", _batch_norm_with_update),
     ("_batch_norm_with_update_functional", _batch_norm_with_update_functional),
     ("_cdist_backward", _cdist_backward),
     ("_cdist_forward", _cdist_forward),
@@ -140,7 +142,12 @@ _FULL_CONFIG = (
     ("_convolution_double_backward", _convolution_double_backward),
     ("_convolution_mode", _convolution_mode),
     ("_cslt_sparse_mm", _cslt_sparse_mm),
+    ("_ctc_loss", _ctc_loss),
+    ("_ctc_loss.out", _ctc_loss_out),
+    ("_ctc_loss.Tensor", _ctc_loss),
+    ("_ctc_loss.Tensor_out", _ctc_loss_out),
     ("_cudnn_attention_forward", cudnn_attention_forward),
+    ("_cudnn_rnn", cudnn_rnn),
     ("_cudnn_rnn_backward", cudnn_rnn_backward),
     ("_cummax_helper", _cummax_helper),
     ("_cummin_helper", _cummin_helper),
@@ -253,14 +260,14 @@ _FULL_CONFIG = (
     ("_nested_from_padded_tensor", _nested_from_padded_tensor),
     ("_nested_select_backward", _nested_select_backward),
     ("_nested_sum_backward", _nested_sum_backward),
+    ("_nested_tensor_from_mask", _nested_tensor_from_mask),
     ("_nested_tensor_from_mask_left_aligned", _nested_tensor_from_mask_left_aligned),
+    ("_nested_tensor_softmax_with_shape", _nested_tensor_softmax_with_shape),
     ("_nested_view_from_buffer_copy", _nested_view_from_buffer_copy),
     ("_nested_view_from_jagged", _nested_view_from_jagged),
     ("_nested_view_from_jagged_copy", _nested_view_from_jagged_copy),
-    # _pad_circular is a CompositeImplicitAutograd op; it decomposes before
-    # reaching the backend key, so we must also register the CompositeImplicitAutograd
-    # key for use_gems() to intercept it instead of silently running the decomposition.
     ("_pad_circular", _pad_circular, None, ["CompositeImplicitAutograd"]),
+    ("_pad_packed_sequence", _pad_packed_sequence),
     ("_padded_dense_to_jagged_forward", _padded_dense_to_jagged_forward),
     ("_pdist_backward", _pdist_backward),
     ("_pdist_forward", _pdist_forward),
@@ -270,9 +277,15 @@ _FULL_CONFIG = (
     ("_resize_output", _resize_output),
     ("_resize_output_", _resize_output_),
     ("_safe_softmax", _safe_softmax),
+    ("_sample_dirichlet", _sample_dirichlet),
+    ("_saturate_weight_to_fp16", _saturate_weight_to_fp16),
     (
         "_scaled_dot_product_attention_math",
         _scaled_dot_product_attention_math,
+    ),
+    (
+        "_scaled_dot_product_attention_math_for_mps",
+        _scaled_dot_product_attention_math_for_mps,
     ),
     ("_scaled_dot_product_cudnn_attention", _scaled_dot_product_cudnn_attention),
     (
@@ -312,6 +325,7 @@ _FULL_CONFIG = (
     ("_sparse_semi_structured_addmm", _sparse_semi_structured_addmm),
     ("_sparse_semi_structured_linear", _sparse_semi_structured_linear),
     ("_sparse_semi_structured_mm", _sparse_semi_structured_mm),
+    ("_spdiags", spdiags),
     ("_standard_gamma", standard_gamma),
     ("_standard_gamma_grad", standard_gamma_grad),
     (
@@ -334,6 +348,7 @@ _FULL_CONFIG = (
         to_copy,
         lambda: version.parse(torch.__version__) >= version.parse("2.4"),
     ),
+    ("_transform_bias_rescale_qkv", _transform_bias_rescale_qkv),
     ("_transformer_encoder_layer_fwd", _transformer_encoder_layer_fwd),
     ("_unique2", _unique2),
     ("_unsafe_index", unsafe_index),
@@ -363,6 +378,7 @@ _FULL_CONFIG = (
         _upsample_nearest_exact1d_backward_grad_input,
     ),
     ("_upsample_nearest_exact2d", _upsample_nearest_exact2d),
+    ("_upsample_nearest_exact2d.out", _upsample_nearest_exact2d_out),
     ("_upsample_nearest_exact2d_backward", _upsample_nearest_exact2d_backward),
     ("_upsample_nearest_exact3d", _upsample_nearest_exact3d),
     (
@@ -611,6 +627,7 @@ _FULL_CONFIG = (
     ("cummin", cummin),
     ("cumprod", cumprod),
     ("cumprod_", cumprod_),
+    ("cumprod_backward", cumprod_backward),
     ("cumsum", cumsum),
     ("cumsum.out", cumsum_out),
     ("cumsum_", cumsum_),
@@ -656,6 +673,7 @@ _FULL_CONFIG = (
     ("elu_backward", elu_backward),
     ("embedding", embedding),
     ("embedding_backward", embedding_backward),
+    ("embedding_bag", embedding_bag),
     ("embedding_dense_backward", embedding_dense_backward),
     ("embedding_renorm_", embedding_renorm_),
     ("embedding_sparse_backward", embedding_sparse_backward),
@@ -824,8 +842,6 @@ _FULL_CONFIG = (
     ("heaviside_", heaviside_),
     ("hinge_embedding_loss", hinge_embedding_loss),
     ("histc", histc),
-    # histogramdd is CompositeImplicitAutograd; a plain 2-tuple would let the native
-    # decomposition run and use_gems() would silently no-op (false pass).
     ("histogramdd", histogramdd, None, ["CompositeImplicitAutograd"]),
     ("hsplit.array", hsplit),
     ("hsplit.int", hsplit),
@@ -833,6 +849,7 @@ _FULL_CONFIG = (
     ("huber_loss", huber_loss),
     ("huber_loss.out", huber_loss_out),
     ("hypot", hypot),
+    ("hypot.out", hypot_out),
     ("hypot_", hypot_),
     ("i0", i0),
     ("i0.out", i0_out),
@@ -1032,7 +1049,10 @@ _FULL_CONFIG = (
     ("masked_scatter_backward", masked_scatter_backward),
     ("masked_select", masked_select),
     ("masked_select_backward", masked_select_backward),
+    ("matmul_backward", matmul_backward),
     ("matrix_exp_backward", matrix_exp_backward),
+    ("matrix_power", matrix_power),
+    ("matrix_power.out", matrix_power_out),
     ("max", max),
     ("max.dim", max_dim),
     ("max_pool1d", max_pool1d),
@@ -1113,6 +1133,7 @@ _FULL_CONFIG = (
     ("native_group_norm_backward", group_norm_backward),
     ("native_layer_norm", native_layer_norm),
     ("native_layer_norm_backward", layer_norm_backward),
+    ("native_norm", native_norm),
     ("ne.Scalar", ne_scalar),
     ("ne.Tensor", ne),
     ("ne_.Scalar", ne_scalar_),
@@ -1147,12 +1168,15 @@ _FULL_CONFIG = (
     ("normal.Tensor_float", normal_tensor_float),
     ("normal.Tensor_Tensor", normal_tensor_tensor),
     ("normal_", normal_),
+    ("normal_functional", normal_functional),
     ("not_equal.Scalar", not_equal_scalar),
     ("not_equal.Tensor", not_equal),
     ("nuclear_norm", nuclear_norm),
     ("one_hot", one_hot),
     ("ones", ones),
     ("ones_like", ones_like),
+    ("orgqr", orgqr),
+    ("orgqr.out", orgqr_out),
     ("ormqr", ormqr),
     ("outer", outer),
     ("pad", pad),
@@ -1533,6 +1557,8 @@ _FULL_CONFIG = (
     ("trace_backward", trace_backward),
     ("transpose.int", transpose),
     ("transpose_copy.int", transpose_copy),
+    ("trapezoid.dx", trapz),
+    ("trapz.dx", trapz),
     ("tril", tril),
     ("tril.out", tril_out),
     ("tril_", tril_),
@@ -1574,6 +1600,11 @@ _FULL_CONFIG = (
     ("upsample_linear1d", upsample_linear1d),
     ("upsample_linear1d_backward", upsample_linear1d_backward),
     ("upsample_nearest1d", upsample_nearest1d),
+    ("upsample_nearest1d_backward", upsample_nearest1d_backward),
+    (
+        "upsample_nearest1d_backward.grad_input",
+        upsample_nearest1d_backward_grad_input,
+    ),
     ("upsample_nearest2d", upsample_nearest2d),
     ("upsample_nearest2d_backward", upsample_nearest2d_backward),
     ("upsample_nearest2d_backward.grad_input", upsample_nearest2d_backward_grad_input),
@@ -1586,6 +1617,7 @@ _FULL_CONFIG = (
     ("upsample_trilinear3d", upsample_trilinear3d),
     ("upsample_trilinear3d_backward", upsample_trilinear3d_backward),
     ("value_selecting_reduction_backward", value_selecting_reduction_backward),
+    ("vander", vander),
     ("var", var),
     ("var.correction", var_correction),
     ("var.dim", var_dim),
