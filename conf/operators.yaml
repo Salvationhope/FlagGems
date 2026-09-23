@@ -6685,6 +6685,8 @@ ops:
 - id: group_norm
   description: An internal IR for applying Group Normalization for last certain number
     of dimensions.
+  for:
+  - native_group_norm
   labels:
   - aten
   - Reduction
