@@ -117,6 +117,8 @@ _FULL_CONFIG = (
     ("_add_relu_.Tensor", _add_relu_),
     ("_addmm_activation", _addmm_activation),
     ("_addmm_activation.out", _addmm_activation_out),
+    ("_aminmax", _aminmax),
+    ("_aminmax.out", _aminmax_out),
     (
         "_amp_foreach_non_finite_check_and_unscale_",
         _amp_foreach_non_finite_check_and_unscale_,
@@ -319,6 +321,10 @@ _FULL_CONFIG = (
     ("_segment_reduce_backward.out", _segment_reduce_backward_out),
     ("_sobol_engine_draw", underscore_sobol_engine_draw),
     ("_sobol_engine_ff_", _sobol_engine_ff_),
+    (
+        "_sobol_engine_initialize_state_",
+        _sobol_engine_initialize_state_,
+    ),
     ("_softmax", softmax),
     ("_softmax.out", softmax_out),
     ("_softmax_backward_data", softmax_backward),

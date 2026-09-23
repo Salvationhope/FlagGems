@@ -23,6 +23,7 @@ from flag_gems.ops._adaptive_avg_pool2d_backward import _adaptive_avg_pool2d_bac
 from flag_gems.ops._add_relu import _add_relu
 from flag_gems.ops._add_relu_ import _add_relu_
 from flag_gems.ops._addmm_activation import _addmm_activation, _addmm_activation_out
+from flag_gems.ops._aminmax import _aminmax, _aminmax_out
 from flag_gems.ops._amp_foreach_non_finite_check_and_unscale_ import (
     _amp_foreach_non_finite_check_and_unscale_,
 )
@@ -170,6 +171,9 @@ from flag_gems.ops._scaled_dot_product_fused_attention_overrideable import (
     _scaled_dot_product_fused_attention_overrideable,
 )
 from flag_gems.ops._sobol_engine_ff_ import _sobol_engine_ff_
+from flag_gems.ops._sobol_engine_initialize_state_ import (
+    _sobol_engine_initialize_state_,
+)
 from flag_gems.ops._sparse_semi_structured_addmm import _sparse_semi_structured_addmm
 from flag_gems.ops._sparse_semi_structured_linear import _sparse_semi_structured_linear
 from flag_gems.ops._sparse_semi_structured_mm import _sparse_semi_structured_mm
@@ -1278,6 +1282,8 @@ __all__ = [
     "_add_relu_",
     "_addmm_activation",
     "_addmm_activation_out",
+    "_aminmax",
+    "_aminmax_out",
     "_amp_foreach_non_finite_check_and_unscale_",
     "_amp_update_scale_",
     "_assert_async",
@@ -1382,6 +1388,7 @@ __all__ = [
     "_segment_reduce_backward",
     "_segment_reduce_backward_out",
     "_sobol_engine_ff_",
+    "_sobol_engine_initialize_state_",
     "_sparse_semi_structured_addmm",
     "_sparse_semi_structured_linear",
     "_sparse_semi_structured_mm",
