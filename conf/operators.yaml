@@ -8230,6 +8230,8 @@ ops:
 - id: layer_norm
   description: An internal IR for applying Layer Normalization for last certain number
     of dimensions.
+  for:
+  - native_layer_norm
   labels:
   - aten
   kind:
