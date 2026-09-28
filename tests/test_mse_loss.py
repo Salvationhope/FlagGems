@@ -50,8 +50,7 @@ def test_mse_loss(shape, dtype, reduction):
 
     ref_out = torch.nn.functional.mse_loss(ref_inp, ref_target, reduction=reduction)
     if reduction == "none":
-        with flag_gems.use_gems():
-            res_out = torch.nn.functional.mse_loss(inp, target, reduction=reduction)
+        res_out = torch.nn.functional.mse_loss(inp, target, reduction=reduction)
     else:
         res_out = flag_gems.mse_loss(
             inp, target, reduction={"mean": 1, "sum": 2}[reduction]

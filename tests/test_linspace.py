@@ -44,16 +44,15 @@ def test_linspace(start, end, steps, dtype, device, pin_memory):
         pin_memory=pin_memory,
     )
     if device is None:
-        with flag_gems.use_gems():
-            res_out = torch.linspace(
-                start,
-                end,
-                steps,
-                dtype=dtype,
-                layout=None,
-                device=device,
-                pin_memory=pin_memory,
-            )
+        res_out = torch.linspace(
+            start,
+            end,
+            steps,
+            dtype=dtype,
+            layout=None,
+            device=device,
+            pin_memory=pin_memory,
+        )
     else:
         res_out = flag_gems.linspace(
             start,
