@@ -43,8 +43,19 @@ def test_linspace(start, end, steps, dtype, device, pin_memory):
         device="cpu" if cfg.TO_CPU else device,
         pin_memory=pin_memory,
     )
-    with flag_gems.use_gems():
-        res_out = torch.linspace(
+    if device is None:
+        with flag_gems.use_gems():
+            res_out = torch.linspace(
+                start,
+                end,
+                steps,
+                dtype=dtype,
+                layout=None,
+                device=device,
+                pin_memory=pin_memory,
+            )
+    else:
+        res_out = flag_gems.linspace(
             start,
             end,
             steps,
