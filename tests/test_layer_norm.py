@@ -69,7 +69,10 @@ def test_native_layer_norm(shape, normalized_shape, dtype, affine, caplog):
     with caplog.at_level("DEBUG", logger="flag_gems.ops.native_layer_norm"):
         result = flag_gems.native_layer_norm(inp, normalized_shape, weight, bias, eps)
 
-    assert "GEMS NATIVE_LAYER_NORM" in caplog.text
+    assert (
+        f"{utils.gems_log_prefix(flag_gems.native_layer_norm)} NATIVE_LAYER_NORM"
+        in caplog.text
+    )
     assert len(result) == len(ref_result) == 3
     for actual, expected in zip(result, ref_result):
         utils.gems_assert_close(actual, expected, dtype)

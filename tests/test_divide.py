@@ -33,5 +33,5 @@ def test_divide(shape, dtype, caplog):
     with caplog.at_level("DEBUG", logger="flag_gems.ops.divide"):
         res_out = flag_gems.divide(inp1, inp2)
 
-    assert "GEMS DIVIDE" in caplog.text
+    assert f"{utils.gems_log_prefix(flag_gems.divide)} DIVIDE" in caplog.text
     utils.gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
