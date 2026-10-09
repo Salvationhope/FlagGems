@@ -17,7 +17,7 @@ def test_special_legendre_polynomial_p(shape, dtype):
     ref_inp = utils.to_reference(inp, True)
     ref_out = torch.special.legendre_polynomial_p(ref_inp, n)
     with flag_gems.use_gems():
-        res_out = torch.special.legendre_polynomial_p(inp, n)
+        res_out = flag_gems.special_legendre_polynomial_p(inp, n)
     utils.gems_assert_close(res_out, ref_out, dtype)
 
 
@@ -31,5 +31,5 @@ def test_special_legendre_polynomial_p_various_n(shape, dtype, n):
     ref_inp = utils.to_reference(inp, True)
     ref_out = torch.special.legendre_polynomial_p(ref_inp, n)
     with flag_gems.use_gems():
-        res_out = torch.special.legendre_polynomial_p(inp, n)
+        res_out = flag_gems.special_legendre_polynomial_p(inp, n)
     utils.gems_assert_close(res_out, ref_out, dtype)

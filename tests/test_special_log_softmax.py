@@ -28,7 +28,7 @@ def test_special_log_softmax(dtype):
     ref_x = utils.to_reference(x)
     ref_out = torch.special.log_softmax(ref_x, dim=1)
     with flag_gems.use_gems():
-        res_out = torch.special.log_softmax(x, dim=1)
+        res_out = flag_gems.special_log_softmax(x, dim=1)
     utils.gems_assert_close(res_out, ref_out, dtype)
 
 
@@ -40,5 +40,5 @@ def test_special_log_softmax_large_n(dtype):
     ref_x = utils.to_reference(x)
     ref_out = torch.special.log_softmax(ref_x, dim=1)
     with flag_gems.use_gems():
-        res_out = torch.special.log_softmax(x, dim=1)
+        res_out = flag_gems.special_log_softmax(x, dim=1)
     utils.gems_assert_close(res_out, ref_out, dtype)

@@ -32,7 +32,7 @@ def test_special_erfinv(shape, dtype):
     else:
         ref_out = torch.ops.aten.special_erfinv(ref_x)
     with flag_gems.use_gems():
-        act_out = torch.ops.aten.special_erfinv(x)
+        act_out = flag_gems.special_erfinv(x)
     utils.gems_assert_close(act_out, ref_out, dtype)
 
 
@@ -52,7 +52,7 @@ def test_special_erfinv_out(shape, dtype):
         ref_out = torch.ops.aten.special_erfinv.out(ref_x, out=out_ref)
     out_act = torch.empty_like(x)
     with flag_gems.use_gems():
-        act_out = torch.ops.aten.special_erfinv.out(x, out=out_act)
+        act_out = flag_gems.special_erfinv_out(x, out_act)
     utils.gems_assert_close(act_out, ref_out, dtype)
     utils.gems_assert_close(out_act, out_ref, dtype)
 

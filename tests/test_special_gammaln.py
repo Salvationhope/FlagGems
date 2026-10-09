@@ -15,7 +15,7 @@ def test_special_gammaln(shape, dtype):
 
     ref_out = torch.special.gammaln(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.special.gammaln(inp)
+        res_out = flag_gems.special_gammaln(inp)
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
@@ -31,7 +31,7 @@ def test_special_gammaln_out(shape, dtype):
 
     torch.special.gammaln(ref_inp, out=ref_out)
     with flag_gems.use_gems():
-        torch.special.gammaln(inp, out=out)
+        flag_gems.special_gammaln_out(inp, out=out)
 
     utils.gems_assert_close(out, ref_out, dtype)
 
@@ -49,7 +49,7 @@ def test_special_gammaln_edge_cases(dtype):
     ref_inp = utils.to_reference(inp, True)
     ref_out = torch.special.gammaln(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.special.gammaln(inp)
+        res_out = flag_gems.special_gammaln(inp)
     # For pole positions res and ref should both be inf; known values should be zero or near-zero.
     # Use equal_nan can't handle inf — rely on the default error formula.
     utils.gems_assert_close(res_out, ref_out, dtype)

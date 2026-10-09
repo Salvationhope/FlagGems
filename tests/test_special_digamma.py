@@ -16,7 +16,7 @@ def test_special_digamma_large(shape, dtype):
 
     ref_out = torch.special.digamma(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.special.digamma(inp)
+        res_out = flag_gems.special_digamma(inp)
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
@@ -31,7 +31,7 @@ def test_special_digamma_small_positive(shape, dtype):
 
     ref_out = torch.special.digamma(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.special.digamma(inp)
+        res_out = flag_gems.special_digamma(inp)
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
@@ -56,7 +56,7 @@ def test_special_digamma_negative(shape, dtype):
 
     ref_out = torch.special.digamma(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.special.digamma(inp)
+        res_out = flag_gems.special_digamma(inp)
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
@@ -71,6 +71,6 @@ def test_special_digamma_mid(shape, dtype):
 
     ref_out = torch.special.digamma(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.special.digamma(inp)
+        res_out = flag_gems.special_digamma(inp)
 
     utils.gems_assert_close(res_out, ref_out, dtype)

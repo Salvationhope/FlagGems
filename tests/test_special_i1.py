@@ -28,7 +28,7 @@ def test_special_i1(shape, dtype):
     ref_inp = utils.to_reference(inp, True)
     ref_out = torch.special.i1(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.special.i1(inp)
+        res_out = flag_gems.special_i1(inp)
     utils.gems_assert_close(res_out, ref_out, dtype)
 
 
@@ -44,7 +44,7 @@ def test_special_i1_out(shape, dtype):
 
     out = torch.empty_like(inp)
     with flag_gems.use_gems():
-        res_out = torch.ops.aten.special_i1.out(inp, out=out)
+        res_out = flag_gems.special_i1_out(inp, out)
 
     assert res_out is out
     utils.gems_assert_close(res_out, ref_out, dtype)

@@ -36,7 +36,7 @@ def test_special_chebyshev_polynomial_w(shape, dtype):
 
     ref_out = torch.special.chebyshev_polynomial_w(ref_x, n)
     with flag_gems.use_gems():
-        res_out = torch.special.chebyshev_polynomial_w(x, n)
+        res_out = flag_gems.special_chebyshev_polynomial_w(x, n)
 
     utils.gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
 
@@ -56,7 +56,7 @@ def test_special_chebyshev_polynomial_w_out_of_domain(dtype):
 
     ref_out = torch.special.chebyshev_polynomial_w(ref_x, n)
     with flag_gems.use_gems():
-        res_out = torch.special.chebyshev_polynomial_w(x, n)
+        res_out = flag_gems.special_chebyshev_polynomial_w(x, n)
 
     utils.gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
 
@@ -72,7 +72,7 @@ def test_special_chebyshev_polynomial_w_out(shape, dtype):
     ref_out = torch.special.chebyshev_polynomial_w(ref_x, n)
     with flag_gems.use_gems():
         out = torch.empty_like(x)
-        res_out = torch.special.chebyshev_polynomial_w(x, n, out=out)
+        res_out = flag_gems.special_chebyshev_polynomial_w_out(x, n, out)
 
     utils.gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
     # Verify output is the same tensor as `out`

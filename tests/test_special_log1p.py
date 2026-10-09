@@ -2,7 +2,6 @@ import pytest
 import torch
 
 import flag_gems
-from flag_gems.ops.special_log1p import special_log1p
 
 from . import accuracy_utils as utils
 
@@ -16,7 +15,7 @@ def test_special_log1p(shape, dtype):
     ref_inp = utils.to_reference(inp.clone())
     ref_out = torch.special.log1p(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.special.log1p(inp)
+        res_out = flag_gems.special_log1p(inp)
     utils.gems_assert_close(res_out, ref_out, dtype)
 
 
@@ -24,7 +23,7 @@ def test_special_log1p(shape, dtype):
 @pytest.mark.parametrize("inp", [1.0, 5, -0.5])
 def test_special_log1p_non_tensor(inp):
     ref_out = torch.special.log1p(torch.tensor(inp, dtype=torch.float32))
-    res_out = special_log1p(inp)
+    res_out = flag_gems.special_log1p(inp)
     utils.gems_assert_close(ref_out, res_out, torch.float32)
 
 
@@ -39,7 +38,7 @@ def test_special_log1p_out(shape, dtype):
     ref_out = torch.ops.aten.special_log1p.out(ref_inp, out=ref_out_buf)
     res_out_buf = torch.empty(shape, dtype=dtype, device=flag_gems.device)
     with flag_gems.use_gems():
-        res_out = torch.ops.aten.special_log1p.out(inp, out=res_out_buf)
+        res_out = flag_gems.special_log1p_out(inp, res_out_buf)
     utils.gems_assert_close(res_out, ref_out, dtype)
 
 
@@ -52,7 +51,7 @@ def test_special_log1p_negative():
     ref_inp = utils.to_reference(inp.clone())
     ref_out = torch.special.log1p(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.special.log1p(inp)
+        res_out = flag_gems.special_log1p(inp)
     utils.gems_assert_close(res_out, ref_out, torch.float32, equal_nan=True)
 
 
@@ -67,7 +66,7 @@ def test_special_log1p_nan_inf():
     ref_inp = utils.to_reference(inp.clone())
     ref_out = torch.special.log1p(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.special.log1p(inp)
+        res_out = flag_gems.special_log1p(inp)
     utils.gems_assert_close(res_out, ref_out, torch.float32, equal_nan=True)
 
 
@@ -86,5 +85,5 @@ def test_special_log1p_small_values():
     ref_inp = utils.to_reference(inp.clone())
     ref_out = torch.special.log1p(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.special.log1p(inp)
+        res_out = flag_gems.special_log1p(inp)
     utils.gems_assert_close(res_out, ref_out, torch.float64)
