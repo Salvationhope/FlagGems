@@ -21,7 +21,7 @@ def test_special_shifted_chebyshev_polynomial_v(shape, dtype):
 
     ref_out = torch.special.shifted_chebyshev_polynomial_v(ref_x, ref_n)
     with flag_gems.use_gems():
-        res_out = torch.special.shifted_chebyshev_polynomial_v(x, n.to(x.device))
+        res_out = flag_gems.special_shifted_chebyshev_polynomial_v(x, n.to(x.device))
 
     # Use a relaxed atol because the recurrence-based computation accumulates
     # float32 rounding errors for higher-degree polynomials.
@@ -41,7 +41,7 @@ def test_special_shifted_chebyshev_polynomial_v_scalar_n(shape, dtype):
 
     ref_out = torch.special.shifted_chebyshev_polynomial_v(ref_x, n)
     with flag_gems.use_gems():
-        res_out = torch.special.shifted_chebyshev_polynomial_v(x, n)
+        res_out = flag_gems.special_shifted_chebyshev_polynomial_v(x, n)
 
     utils.gems_assert_close(res_out, ref_out, dtype, atol=5e-3)
 
@@ -55,7 +55,7 @@ def test_special_shifted_chebyshev_polynomial_v_out_of_range_tensor(shape, dtype
     n = torch.full(shape, 16, device="cpu").to(torch.int32)
 
     with flag_gems.use_gems():
-        res_out = torch.special.shifted_chebyshev_polynomial_v(x, n.to(x.device))
+        res_out = flag_gems.special_shifted_chebyshev_polynomial_v(x, n.to(x.device))
 
     expected = torch.zeros(res_out.shape, dtype=res_out.dtype)
     utils.gems_assert_close(res_out.cpu(), expected, dtype, atol=0.0)
@@ -72,7 +72,7 @@ def test_special_shifted_chebyshev_polynomial_v_out_of_range_scalar(
     x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
 
     with flag_gems.use_gems():
-        res_out = torch.special.shifted_chebyshev_polynomial_v(x, bad_n)
+        res_out = flag_gems.special_shifted_chebyshev_polynomial_v(x, bad_n)
 
     expected = torch.zeros(res_out.shape, dtype=res_out.dtype)
     utils.gems_assert_close(res_out.cpu(), expected, dtype, atol=0.0)

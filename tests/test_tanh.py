@@ -29,7 +29,7 @@ def test_tanh(shape, dtype):
 
     ref_out = torch.tanh(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.tanh(res_inp)
+        res_out = flag_gems.tanh(res_inp)
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
@@ -43,7 +43,7 @@ def test_tanh_(shape, dtype):
 
     ref_out = torch.tanh_(ref_inp)
     with flag_gems.use_gems():
-        res_out = torch.tanh_(res_inp)
+        res_out = flag_gems.tanh_(res_inp)
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
@@ -60,6 +60,6 @@ def test_tanh_backward(shape, dtype):
 
     ref_in_grad = torch.ops.aten.tanh_backward(ref_grad, ref_out)
     with flag_gems.use_gems():
-        res_in_grad = torch.ops.aten.tanh_backward(res_grad, res_out)
+        res_in_grad = flag_gems.tanh_backward(res_grad, res_out)
 
     utils.gems_assert_close(res_in_grad, ref_in_grad, dtype)

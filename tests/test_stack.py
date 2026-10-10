@@ -58,7 +58,7 @@ def test_stack(shape, dim, dtype):
     ref_out = torch.stack(ref_inp, dim)
 
     with flag_gems.use_gems():
-        res_out = torch.stack(inp, dim)
+        res_out = flag_gems.stack(inp, dim)
 
     utils.gems_assert_equal(res_out, ref_out)
 

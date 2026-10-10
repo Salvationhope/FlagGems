@@ -36,6 +36,6 @@ def test_tile(shape, dims, dtype):
 
     ref_out = torch.tile(ref_inp, dims)
     with flag_gems.use_gems():
-        res_out = torch.tile(inp, dims)
+        res_out = flag_gems.tile(inp, dims)
 
     utils.gems_assert_close(res_out, ref_out, dtype)

@@ -60,7 +60,7 @@ def test_thnn_fused_lstm_cell_backward_impl(shape, dtype):
         grad_hy, grad_cy, cx, cy, workspace, True
     )
     with flag_gems.use_gems():
-        res_out = torch.ops.aten._thnn_fused_lstm_cell_backward_impl(
+        res_out = flag_gems._thnn_fused_lstm_cell_backward_impl(
             grad_hy, grad_cy, cx, cy, workspace, True
         )
 

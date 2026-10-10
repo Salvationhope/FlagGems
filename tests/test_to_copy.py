@@ -37,7 +37,7 @@ def test_to_dtype(shape, dtype):
     ref_x = utils.to_reference(x)
     ref_out = ref_x.to(dtype)
     with flag_gems.use_gems():
-        out = x.to(dtype)
+        out = flag_gems.to_copy(x, dtype=dtype)
     utils.gems_assert_equal(out, ref_out)
 
 
@@ -54,7 +54,7 @@ def test_to_copy_dtype_cast(shape, target_dtype):
     ref_x = utils.to_reference(x)
     ref_out = torch.ops.aten._to_copy(ref_x, dtype=target_dtype)
     with flag_gems.use_gems():
-        res_out = torch.ops.aten._to_copy(x, dtype=target_dtype)
+        res_out = flag_gems.to_copy(x, dtype=target_dtype)
     utils.gems_assert_equal(res_out, ref_out)
 
 
@@ -73,7 +73,7 @@ def test_to_copy_preserve_strides(memory_format):
         memory_format=memory_format,
     )
     with flag_gems.use_gems():
-        res_out = torch.ops.aten._to_copy(
+        res_out = flag_gems.to_copy(
             x,
             dtype=x.dtype,
             memory_format=memory_format,
@@ -105,7 +105,7 @@ def test_to_copy_float_to_float(shape, src_dtype, dst_dtype):
     ref_x = utils.to_reference(x)
     ref_out = torch.ops.aten._to_copy(ref_x, dtype=dst_dtype)
     with flag_gems.use_gems():
-        res_out = torch.ops.aten._to_copy(x, dtype=dst_dtype)
+        res_out = flag_gems.to_copy(x, dtype=dst_dtype)
     utils.gems_assert_equal(res_out, ref_out)
 
 
@@ -123,7 +123,7 @@ def test_to_copy_float_to_int(shape, src_dtype, dst_dtype):
     ref_x = utils.to_reference(x)
     ref_out = torch.ops.aten._to_copy(ref_x, dtype=dst_dtype)
     with flag_gems.use_gems():
-        res_out = torch.ops.aten._to_copy(x, dtype=dst_dtype)
+        res_out = flag_gems.to_copy(x, dtype=dst_dtype)
     utils.gems_assert_equal(res_out, ref_out)
 
 
@@ -147,7 +147,7 @@ def test_to_copy_int_to_float(shape, src_dtype, dst_dtype):
     ref_x = utils.to_reference(x)
     ref_out = torch.ops.aten._to_copy(ref_x, dtype=dst_dtype)
     with flag_gems.use_gems():
-        res_out = torch.ops.aten._to_copy(x, dtype=dst_dtype)
+        res_out = flag_gems.to_copy(x, dtype=dst_dtype)
     utils.gems_assert_equal(res_out, ref_out)
 
 
@@ -170,7 +170,7 @@ def test_to_copy_int_to_int(shape, src_dtype, dst_dtype):
     ref_x = utils.to_reference(x)
     ref_out = torch.ops.aten._to_copy(ref_x, dtype=dst_dtype)
     with flag_gems.use_gems():
-        res_out = torch.ops.aten._to_copy(x, dtype=dst_dtype)
+        res_out = flag_gems.to_copy(x, dtype=dst_dtype)
     utils.gems_assert_equal(res_out, ref_out)
 
 
@@ -187,7 +187,7 @@ def test_to_copy_float_to_uint8(shape, src_dtype):
     ref_x = utils.to_reference(x)
     ref_out = torch.ops.aten._to_copy(ref_x, dtype=torch.uint8)
     with flag_gems.use_gems():
-        res_out = torch.ops.aten._to_copy(x, dtype=torch.uint8)
+        res_out = flag_gems.to_copy(x, dtype=torch.uint8)
     utils.gems_assert_equal(res_out, ref_out)
 
 
@@ -210,7 +210,7 @@ def test_to_copy_uint8_to_float(shape, dst_dtype):
     ref_x = utils.to_reference(x)
     ref_out = torch.ops.aten._to_copy(ref_x, dtype=dst_dtype)
     with flag_gems.use_gems():
-        res_out = torch.ops.aten._to_copy(x, dtype=dst_dtype)
+        res_out = flag_gems.to_copy(x, dtype=dst_dtype)
     utils.gems_assert_equal(res_out, ref_out)
 
 
@@ -231,5 +231,5 @@ def test_to_copy_uint8_to_int(shape, dst_dtype):
     ref_x = utils.to_reference(x)
     ref_out = torch.ops.aten._to_copy(ref_x, dtype=dst_dtype)
     with flag_gems.use_gems():
-        res_out = torch.ops.aten._to_copy(x, dtype=dst_dtype)
+        res_out = flag_gems.to_copy(x, dtype=dst_dtype)
     utils.gems_assert_equal(res_out, ref_out)

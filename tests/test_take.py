@@ -59,12 +59,12 @@ def _assert_matches_torch(inp, index, out=None):
     if out is None:
         ref_out = torch.take(ref_inp, ref_idx)
         with flag_gems.use_gems():
-            result = torch.take(inp, index)
+            result = flag_gems.take(inp, index)
     else:
         ref_out = torch.empty(index.shape, dtype=inp.dtype, device=ref_inp.device)
         torch.take(ref_inp, ref_idx, out=ref_out)
         with flag_gems.use_gems():
-            result = torch.take(inp, index, out=out)
+            result = flag_gems.take_out(inp, index, out=out)
         assert result is out
 
     # take is a pure gather, values must match exactly.
@@ -146,7 +146,7 @@ def test_take_out_rejects_mismatched_dtype():
     out = torch.empty((4,), dtype=torch.int32, device=flag_gems.device)
 
     with flag_gems.use_gems(), pytest.raises(RuntimeError):
-        torch.take(inp, index, out=out)
+        flag_gems.take_out(inp, index, out=out)
 
 
 @pytest.mark.take
@@ -163,5 +163,5 @@ def test_take_multidim_index():
     index = _make_index(inp.numel(), (3, 5))
     _assert_matches_torch(inp, index)
     with flag_gems.use_gems():
-        result = torch.take(inp, index)
+        result = flag_gems.take(inp, index)
     assert tuple(result.shape) == (3, 5)

@@ -64,7 +64,7 @@ def test_thnn_fused_lstm_cell(shape, dtype):
 
     # Compute with FlagGems
     with flag_gems.use_gems():
-        res_hy, res_cy, res_workspace = torch.ops.aten._thnn_fused_lstm_cell(
+        res_hy, res_cy, res_workspace = flag_gems._thnn_fused_lstm_cell(
             input_gates, hidden_gates, cx
         )
 
@@ -116,7 +116,7 @@ def test_thnn_fused_lstm_cell_with_bias(shape, dtype):
 
     # Compute with FlagGems
     with flag_gems.use_gems():
-        res_hy, res_cy, res_workspace = torch.ops.aten._thnn_fused_lstm_cell(
+        res_hy, res_cy, res_workspace = flag_gems._thnn_fused_lstm_cell(
             input_gates, hidden_gates, cx, input_bias, hidden_bias
         )
 
