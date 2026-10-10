@@ -14,8 +14,7 @@ def test_special_log1p(shape, dtype):
     inp = torch.rand(shape, dtype=dtype, device=flag_gems.device)
     ref_inp = utils.to_reference(inp.clone())
     ref_out = torch.special.log1p(ref_inp)
-    with flag_gems.use_gems():
-        res_out = flag_gems.special_log1p(inp)
+    res_out = flag_gems.special_log1p(inp)
     utils.gems_assert_close(res_out, ref_out, dtype)
 
 
@@ -37,8 +36,7 @@ def test_special_log1p_out(shape, dtype):
     ref_out_buf = torch.empty(shape, dtype=ref_inp.dtype, device=ref_inp.device)
     ref_out = torch.ops.aten.special_log1p.out(ref_inp, out=ref_out_buf)
     res_out_buf = torch.empty(shape, dtype=dtype, device=flag_gems.device)
-    with flag_gems.use_gems():
-        res_out = flag_gems.special_log1p_out(inp, res_out_buf)
+    res_out = flag_gems.special_log1p_out(inp, res_out_buf)
     utils.gems_assert_close(res_out, ref_out, dtype)
 
 
@@ -50,8 +48,7 @@ def test_special_log1p_negative():
     )
     ref_inp = utils.to_reference(inp.clone())
     ref_out = torch.special.log1p(ref_inp)
-    with flag_gems.use_gems():
-        res_out = flag_gems.special_log1p(inp)
+    res_out = flag_gems.special_log1p(inp)
     utils.gems_assert_close(res_out, ref_out, torch.float32, equal_nan=True)
 
 
@@ -65,8 +62,7 @@ def test_special_log1p_nan_inf():
     )
     ref_inp = utils.to_reference(inp.clone())
     ref_out = torch.special.log1p(ref_inp)
-    with flag_gems.use_gems():
-        res_out = flag_gems.special_log1p(inp)
+    res_out = flag_gems.special_log1p(inp)
     utils.gems_assert_close(res_out, ref_out, torch.float32, equal_nan=True)
 
 
@@ -84,6 +80,5 @@ def test_special_log1p_small_values():
     )
     ref_inp = utils.to_reference(inp.clone())
     ref_out = torch.special.log1p(ref_inp)
-    with flag_gems.use_gems():
-        res_out = flag_gems.special_log1p(inp)
+    res_out = flag_gems.special_log1p(inp)
     utils.gems_assert_close(res_out, ref_out, torch.float64)

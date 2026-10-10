@@ -26,8 +26,7 @@ def test_special_shifted_chebyshev_polynomial_w(shape, dtype):
     ref_inp2 = utils.to_reference(inp2, True)
 
     ref_out = torch.special.shifted_chebyshev_polynomial_w(ref_inp1, ref_inp2)
-    with flag_gems.use_gems():
-        res_out = flag_gems.special_shifted_chebyshev_polynomial_w(inp1, inp2)
+    res_out = flag_gems.special_shifted_chebyshev_polynomial_w(inp1, inp2)
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
