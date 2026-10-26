@@ -1036,7 +1036,7 @@ from flag_gems.ops.logspace import logspace
 from flag_gems.ops.logsumexp import logsumexp
 from flag_gems.ops.lstm import lstm
 from flag_gems.ops.lstm_cell import lstm_cell
-from flag_gems.ops.lt import less, less_scalar, lt, lt_scalar
+from flag_gems.ops.lt import less_scalar, less_tensor, lt, lt_scalar
 from flag_gems.ops.lt_ import lt_, lt_scalar_
 from flag_gems.ops.lu_unpack import lu_unpack, lu_unpack_out
 from flag_gems.ops.margin_ranking_loss import margin_ranking_loss
@@ -2512,7 +2512,6 @@ __all__ = [
     "lerp_scalar_",
     "lerp_tensor",
     "lerp_tensor_",
-    "less",
     "less_",
     "less_equal",
     "less_equal_",
@@ -2520,6 +2519,7 @@ __all__ = [
     "less_equal_scalar_",
     "less_scalar",
     "less_scalar_",
+    "less_tensor",
     "lgamma",
     "lgamma_",
     "lift",

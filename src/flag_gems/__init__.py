@@ -74,7 +74,7 @@ def div_tensor_mode_(A, B, rounding_mode=None):
     return div_mode_(A, B, rounding_mode=rounding_mode)
 
 
-def less(A, B):
+def less_tensor(A, B):
     return lt(A, B)
 
 
@@ -1269,7 +1269,7 @@ _FULL_CONFIG = (
     ("lerp_.Scalar", lerp_scalar_),
     ("lerp_.Tensor", lerp_tensor_),
     ("less.Scalar", less_scalar),
-    ("less.Tensor", less),
+    ("less.Tensor", less_tensor),
     ("less_.Scalar", less_scalar_),
     ("less_.Tensor", less_),
     ("less_equal.Scalar", less_equal_scalar),
@@ -1403,8 +1403,8 @@ _FULL_CONFIG = (
     ("logsumexp", logsumexp),
     ("lstm.input", lstm),
     ("lstm_cell", lstm_cell),
-    ("lt.Scalar", less_scalar),
-    ("lt.Tensor", less),
+    ("lt.Scalar", lt_scalar),
+    ("lt.Tensor", lt),
     ("lt_.Scalar", lt_scalar_),
     ("lt_.Tensor", lt_),
     ("lu_unpack", lu_unpack),

@@ -44,8 +44,8 @@ def lt_scalar(A, B):
     return lt_func_scalar(A, B)
 
 
-def less(A, B):
-    logger.debug("GEMS LESS")
+def less_tensor(A, B):
+    logger.debug("GEMS LESS_TENSOR")
     return lt_func(A, B)
 
 

@@ -32,7 +32,7 @@ def test_less(shape, dtype):
     ref_inp2 = utils.to_reference(inp2)
 
     ref_out = torch.less(ref_inp1, ref_inp2)
-    res_out = flag_gems.less(inp1, inp2)
+    res_out = flag_gems.less_tensor(inp1, inp2)
 
     utils.gems_assert_equal(res_out, ref_out)
 

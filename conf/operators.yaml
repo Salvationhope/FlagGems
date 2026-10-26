@@ -11228,18 +11228,6 @@ primal value saved by `fw_primal` into the caller-supplied `out` buffer.
   - LinearAlg
   stages:
   - stable: '3.0'
-- id: less
-  description: Computes that `input` is less than `other` element-wise.
-  for:
-  - less.Tensor
-  - lt.Tensor
-  labels:
-  - aten
-  - pointwise
-  kind:
-  - Math
-  stages:
-  - stable: '2.0'
 - id: less_
   description: The in-place version of `less()`.
   for:
@@ -11318,6 +11306,18 @@ primal value saved by `fw_primal` into the caller-supplied `out` buffer.
   - Math
   stages:
   - alpha: '5.4'
+- id: less_tensor
+  description: Computes that `input` is less than `other` element-wise.
+  for:
+  - less.Tensor
+  - lt.Tensor
+  labels:
+  - aten
+  - pointwise
+  kind:
+  - Math
+  stages:
+  - stable: '2.0'
 - id: lgamma
   description: Computes the logarithm of the gamma function on input.
   for:
