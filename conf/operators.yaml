@@ -9488,11 +9488,12 @@ primal value saved by `fw_primal` into the caller-supplied `out` buffer.
   stages:
   - alpha: '5.4'
 - id: hadamard_transform_mn
-  description: Applies a fused Hadamard transform to dimensions M * 2^k,
-    where M is 3, 5, or 7.
+  description: Applies a fused Hadamard transform for dimensions decomposed as M times
+    a power of two.
   for:
   - hadamard_transform_mn
-  labels: []
+  labels:
+  - pointwise
   kind:
   - Math
   stages:
