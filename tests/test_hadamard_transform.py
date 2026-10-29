@@ -215,7 +215,7 @@ def test_hadamard_transform_specialized(batch, dim, M, tag, dtype):
 def test_hadamard_transform_scale(scale, dtype):
     batch, dim = 16, 6144
     x = torch.randn(batch, dim, dtype=dtype, device=flag_gems.device)
-    ref_out = _hadamard_transform_ref(x.float(), scale=scale)
+    ref_out = _hadamard_transform_ref(utils.to_reference(x.float()), scale=scale)
     res_out = flag_gems.hadamard_transform(x, scale=scale)
     utils.gems_assert_close(res_out, ref_out, dtype, reduce_dim=dim)
 
@@ -226,6 +226,6 @@ def test_hadamard_transform_scale(scale, dtype):
 @pytest.mark.parametrize("shape", [(4, 8, 3072), (2, 3, 4, 1536)])
 def test_hadamard_transform_leading_dims(shape, dtype):
     x = torch.randn(*shape, dtype=dtype, device=flag_gems.device)
-    ref_out = _hadamard_transform_ref(x.float())
+    ref_out = _hadamard_transform_ref(utils.to_reference(x.float()))
     res_out = flag_gems.hadamard_transform(x)
     utils.gems_assert_close(res_out, ref_out, dtype, reduce_dim=shape[-1])
