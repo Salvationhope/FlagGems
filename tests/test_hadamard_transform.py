@@ -61,17 +61,12 @@ else:
 
 if cfg.QUICK_MODE:
     HADAMARD_MN_CASES = [
-        (1536, 3, "12N"),
         (10240, 5, "20N"),
         (14336, 7, "28N"),
         (40960, 5, "40N"),
     ]
 else:
     HADAMARD_MN_CASES = [
-        (1536, 3, "12N"),
-        (3072, 3, "12N"),
-        (6144, 3, "12N"),
-        (12288, 3, "12N"),
         (10240, 5, "20N"),
         (20480, 5, "20N"),
         (14336, 7, "28N"),
@@ -80,7 +75,6 @@ else:
     ]
 
 _FN_MAP = {
-    "12N": flag_gems.hadamard_transform_12N,
     "20N": flag_gems.hadamard_transform_20N,
     "28N": flag_gems.hadamard_transform_28N,
     "40N": flag_gems.hadamard_transform_40N,
@@ -113,8 +107,16 @@ def _hadamard_transform_ref(x, scale=1.0):
 @pytest.mark.hadamard_transform
 @_skip_if_join_bug
 @pytest.mark.parametrize("dtype", utils.FLOAT_DTYPES)
-@pytest.mark.parametrize("dim", HADAMARD_DIMS)
-def test_hadamard_transform(dim, dtype):
+@pytest.mark.parametrize(
+    "dim,batch_size",
+    [(dim, 15) for dim in HADAMARD_DIMS]
+    + [
+        (dim, batch)
+        for dim in ([1536] if cfg.QUICK_MODE else [1536, 3072, 6144, 12288])
+        for batch in [1, 16, 1024]
+    ],
+)
+def test_hadamard_transform(dim, batch_size, dtype):
     """Dao-style accuracy test vs scipy Hadamard matrix multiply (fp32 ground truth)."""
     if scipy_hadamard is None:
         pytest.skip("scipy is required for hadamard_transform_ref")
@@ -124,7 +126,6 @@ def test_hadamard_transform(dim, dtype):
         atol = 5e-2
 
     torch.random.manual_seed(0)
-    batch_size = 15
     device = flag_gems.device
     x = torch.randn(batch_size, dim, device=device, dtype=dtype).requires_grad_()
     x_ref = x.detach().clone().requires_grad_()
@@ -195,36 +196,36 @@ def _ref_mn(x: torch.Tensor, M: int) -> torch.Tensor:
     return out
 
 
-@pytest.mark.hadamard_transform_mn
+@pytest.mark.hadamard_transform
 @_skip_if_join_bug
 @pytest.mark.parametrize("dtype", utils.FLOAT_DTYPES)
 @pytest.mark.parametrize("dim,M,tag", HADAMARD_MN_CASES)
 @pytest.mark.parametrize("batch", [1, 16, 1024])
-def test_hadamard_transform_mn(batch, dim, M, tag, dtype):
+def test_hadamard_transform_specialized(batch, dim, M, tag, dtype):
     x = torch.randn(batch, dim, dtype=dtype, device=flag_gems.device)
     ref_out = _ref_mn(x, M)
     res_out = _FN_MAP[tag](x)
     utils.gems_assert_close(res_out, ref_out, dtype, reduce_dim=dim)
 
 
-@pytest.mark.hadamard_transform_mn
+@pytest.mark.hadamard_transform
 @_skip_if_join_bug
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
 @pytest.mark.parametrize("scale", [0.5, 1.0, 2.0])
-def test_hadamard_transform_mn_scale(scale, dtype):
-    batch, dim, M = 16, 6144, 3
+def test_hadamard_transform_scale(scale, dtype):
+    batch, dim = 16, 6144
     x = torch.randn(batch, dim, dtype=dtype, device=flag_gems.device)
-    ref_out = _ref_mn(x, M) * scale
-    res_out = flag_gems.hadamard_transform_12N(x, scale=scale)
+    ref_out = _hadamard_transform_ref(x.float(), scale=scale)
+    res_out = flag_gems.hadamard_transform(x, scale=scale)
     utils.gems_assert_close(res_out, ref_out, dtype, reduce_dim=dim)
 
 
-@pytest.mark.hadamard_transform_mn
+@pytest.mark.hadamard_transform
 @_skip_if_join_bug
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
 @pytest.mark.parametrize("shape", [(4, 8, 3072), (2, 3, 4, 1536)])
-def test_hadamard_transform_mn_leading_dims(shape, dtype):
+def test_hadamard_transform_leading_dims(shape, dtype):
     x = torch.randn(*shape, dtype=dtype, device=flag_gems.device)
-    ref_out = _ref_mn(x, M=3)
-    res_out = flag_gems.hadamard_transform_12N(x)
+    ref_out = _hadamard_transform_ref(x.float())
+    res_out = flag_gems.hadamard_transform(x)
     utils.gems_assert_close(res_out, ref_out, dtype, reduce_dim=shape[-1])
