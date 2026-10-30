@@ -41,11 +41,6 @@ _skip_if_join_bug = pytest.mark.skipif(
 # ============================================================
 
 _FHT_SHAPES = [
-    *[
-        (batch, dim)
-        for batch in (1024, 8192, 32768)
-        for dim in (1536, 3072, 6144, 12288)
-    ],
     (1024, 256),
     (1024, 512),
     (1024, 1024),
@@ -123,10 +118,22 @@ def test_hadamard_transform():
 
 
 # ============================================================
-# Specialized 20N/28N/40N benchmarks
+# M×N fused kernel benchmark (hadamard_transform_12N/20N/28N/40N)
 # ============================================================
 
 _HT_MN_SHAPES = [
+    (1024, 1536),
+    (1024, 3072),
+    (1024, 6144),
+    (1024, 12288),
+    (8192, 1536),
+    (8192, 3072),
+    (8192, 6144),
+    (8192, 12288),
+    (32768, 1536),
+    (32768, 3072),
+    (32768, 6144),
+    (32768, 12288),
     (1024, 10240),
     (1024, 14336),
     (1024, 20480),
@@ -138,6 +145,10 @@ _HT_MN_SHAPES = [
 ]
 
 _TAG_FOR_DIM = {
+    1536: "12N",
+    3072: "12N",
+    6144: "12N",
+    12288: "12N",
     10240: "20N",
     20480: "20N",
     14336: "28N",
@@ -145,6 +156,7 @@ _TAG_FOR_DIM = {
 }
 
 _FN_MAP = {
+    "12N": flag_gems.hadamard_transform_12N,
     "20N": flag_gems.hadamard_transform_20N,
     "28N": flag_gems.hadamard_transform_28N,
     "40N": flag_gems.hadamard_transform_40N,
@@ -181,18 +193,14 @@ class HadamardMNBenchmark(base.GenericBenchmark2DOnly):
         self.shapes = self.DEFAULT_SHAPES
 
 
-@pytest.mark.hadamard_transform
+@pytest.mark.hadamard_transform_mn
 @_skip_if_join_bug
-@pytest.mark.parametrize("tag", ["20N", "28N", "40N"])
-def test_hadamard_transform_specialized(tag):
+def test_hadamard_transform_mn():
     bench = HadamardMNBenchmark(
         input_fn=ht_mn_input_fn,
-        op_name=f"hadamard_transform_{tag}",
+        op_name="hadamard_transform_mn",
         torch_op=torch_ht_mn,
         gems_op=gems_ht_mn,
         dtypes=consts.FLOAT_DTYPES,
     )
-    bench.DEFAULT_SHAPES = [
-        shape for shape in _HT_MN_SHAPES if _TAG_FOR_DIM[shape[-1]] == tag
-    ]
     bench.run()
